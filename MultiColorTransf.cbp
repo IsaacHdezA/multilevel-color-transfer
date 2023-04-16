@@ -13,9 +13,14 @@
 				<Option compiler="gcc" />
 				<Compiler>
 					<Add option="-O2" />
+					<Add option="-std=c++11" />
+					<Add directory="C:/opencv/myBuild/install/include" />
+					<Add directory="C:/opencv/myBuild/install/include/opencv2" />
 				</Compiler>
 				<Linker>
 					<Add option="-s" />
+					<Add library="C:/opencv/myBuild/install/x64/mingw/lib/*.dll.a" />
+					<Add directory="C:/opencv/myBuild/install/x64/mingw/lib" />
 				</Linker>
 			</Target>
 		</Build>
@@ -24,6 +29,7 @@
 			<Add option="-fexceptions" />
 		</Compiler>
 		<Unit filename="main.cpp" />
+		<Unit filename="utils.hpp" />
 		<Extensions>
 			<lib_finder disable_auto="1" />
 		</Extensions>

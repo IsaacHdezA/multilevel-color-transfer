@@ -25,6 +25,7 @@ inline float CIELAB_f(float t) {
 
 Mat RGB_2_CIEXYZ(const Mat &);
 Mat XYZ_2_CIELAB(const Mat &);
+Mat CIELAB_2_XYZ(const Mat &);
 
 int main(void) {
     const string IMG_PATH = "./res/",
@@ -48,12 +49,17 @@ int main(void) {
          << "\t-> Original XYZ pixel: " <<    rgb_ciexyz.at<Vec3f>(0, 0) << '\n'
          << "\t-> Pixel in LAB space: " << ciexyz_cielab.at<Vec3f>(0, 0) << endl;
 
-    Mat rgb_cielab_cv;
-    src.convertTo(src, CV_32FC3, 1.0 / 255.0);
-    cvtColor(rgb_ciexyz, rgb_cielab_cv, COLOR_RGB2Lab);
-    cout << "RGB_2_CIELAB:" << '\n'
-         << "\t-> Original RGB pixel: " <<           src.at<Vec3f>(0, 0) << '\n'
-         << "\t-> Pixel in LAB space: " << rgb_cielab_cv.at<Vec3f>(0, 0) << endl;
+    Mat cielab_ciexyz = CIELAB_2_XYZ(ciexyz_cielab);
+    cout << "CIELAB_2_XYZ:" << '\n'
+         << "\t-> Original LAB pixel: "      << ciexyz_cielab.at<Vec3f>(0, 0) << '\n'
+         << "\t-> Pixel back in XYZ space: " << cielab_ciexyz.at<Vec3f>(0, 0) << endl;
+
+    // Mat rgb_cielab_cv;
+    // src.convertTo(src, CV_32FC3, 1.0 / 255.0);
+    // cvtColor(rgb_ciexyz, rgb_cielab_cv, COLOR_RGB2Lab);
+    // cout << "RGB_2_CIELAB:" << '\n'
+    //      << "\t-> Original RGB pixel: " <<           src.at<Vec3f>(0, 0) << '\n'
+    //      << "\t-> Pixel in LAB space: " << rgb_cielab_cv.at<Vec3f>(0, 0) << endl;
 
     waitKey();
 }
@@ -96,7 +102,7 @@ Mat XYZ_2_CIELAB(const Mat &src) {
 
     output = Mat::zeros(src.rows, src.cols, CV_32FC3);
 
-    // Tristimulus values from Illuminant D65
+    // Tristimulus values from Illuminant D65 2°
     const float X_n = 0.95047,
                 Y_n = 1.00000,
                 Z_n = 1.08883;
@@ -108,6 +114,48 @@ Mat XYZ_2_CIELAB(const Mat &src) {
             out[j][0] = 116 *  CIELAB_f((row[j][1]) / Y_n) - 16;
             out[j][1] = 500 * (CIELAB_f((row[j][0]) / X_n) - CIELAB_f(row[j][1] / Y_n));
             out[j][2] = 200 * (CIELAB_f((row[j][1]) / Y_n) - CIELAB_f(row[j][2] / Z_n));
+        }
+    }
+
+    return output;
+}
+
+Mat CIELAB_2_XYZ(const Mat &src) {
+    Mat output = Mat::zeros(1, 1, CV_32FC3);
+
+    if(!src.data || src.channels() == 1) {
+        cout << "\n\t! RGB_2_CIELAB: Image is empty or monochromatic. Should be three channels (BGR)." << endl;
+        return output;
+    }
+
+    output = Mat::zeros(src.rows, src.cols, CV_32FC3);
+
+    float f_y = 0,
+          f_x = 0,
+          f_z = 0;
+    
+    // Tristimulus values from Illuminant D65 2°
+    const float SIGMA = 6.0/29.0,
+                FRAC  = 16.0/116.0,
+                X_n   = 0.95047,
+                Y_n   = 1.00000,
+                Z_n   = 1.08883;
+
+    for(int i = 0; i < src.rows; i++) {
+        Vec3f *row = (Vec3f *)    src.ptr<Vec3f>(i),
+              *out = (Vec3f *) output.ptr<Vec3f>(i);
+        for(int j = 0; j < src.cols; j++) {
+            f_y = (row[j][0] + 16.0) / 166.0;
+            f_x = f_y + (row[j][1] / 500.0);
+            f_z = f_y + (row[j][2] / 200.0);
+
+            out[j][0] = (f_x > SIGMA) ? (X_n * powf(f_x, 3)) : (f_x - FRAC);
+            out[j][1] = (f_y > SIGMA) ? (Y_n * powf(f_y, 3)) : (f_y - FRAC);
+            out[j][2] = (f_z > SIGMA) ? (Z_n * powf(f_z, 3)) : (f_z - FRAC);
+
+            // out[j][1] = Y_n * (1.0 / CIELAB_f((1.0 / 116.0) * (row[j][0] + 16)));
+            // out[j][0] = X_n * (1.0 / CIELAB_f((1.0 / 116.0) * (row[j][0] + 16) + ((1.0 / 500.0) * row[j][1])));
+            // out[j][2] = Z_n * (1.0 / CIELAB_f((1.0 / 116.0) * (row[j][0] + 16) - ((1.0 / 200.0) * row[j][2])));
         }
     }
 
