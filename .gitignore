@@ -1,0 +1,6 @@
+bin/
+obj/
+res/
+.vscode/
+*.depend
+*.layout
