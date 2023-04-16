@@ -22,11 +22,17 @@ inline float CIELAB_f(float t) {
     //        cbrtf(t) :
     //        ((1.0/3.0) * (powf(1.0/SIGMA, 2) * t)) + (4.0 / 29.0);
 }
+inline double map(double x, double start1, double stop1, double start2, double stop2) { return (((stop2 - start2)/(stop1 - start1)) * (x - start1)) + start2; }
 
 Mat RGB_2_CIEXYZ(const Mat &);
 Mat XYZ_2_CIELAB(const Mat &);
 Mat CIELAB_2_XYZ(const Mat &);
 Mat CIEXYZ_2_RGB(const Mat &);
+
+// Histogram stuff
+int *getImageHistogram(const Mat &);
+Mat createHistogram(const Mat &, string, int = 572, int = 572);
+void imgMinMax(const Mat &, int &, int &);
 
 int main(void) {
     const string IMG_PATH = "./res/",
@@ -60,17 +66,13 @@ int main(void) {
          << "\t-> Original XYZ pixel: "      << cielab_ciexyz.at<Vec3f>(0, 0) << '\n'
          << "\t-> Pixel back in RGB space: " <<    ciexyz_rgb.at<Vec3b>(0, 0) << endl;
 
-    imshow("Original", src);
-    imshow("Conversion", ciexyz_rgb);
+    // imshow("Original", src);
+    // imshow("Conversion", ciexyz_rgb);
 
-    // Mat rgb_cielab_cv;
-    // src.convertTo(src, CV_32FC3, 1.0 / 255.0);
-    // cvtColor(rgb_ciexyz, rgb_cielab_cv, COLOR_RGB2Lab);
-    // cout << "RGB_2_CIELAB:" << '\n'
-    //      << "\t-> Original RGB pixel: " <<           src.at<Vec3f>(0, 0) << '\n'
-    //      << "\t-> Pixel in LAB space: " << rgb_cielab_cv.at<Vec3f>(0, 0) << endl;
+    Mat hist = createHistogram(src, "Titulo");
 
     waitKey();
+    return 0;
 }
 
 Mat RGB_2_CIEXYZ(const Mat &src) {
@@ -81,10 +83,16 @@ Mat RGB_2_CIEXYZ(const Mat &src) {
         return output;
     }
 
+    // const Mat M_CONV = (Mat_<float>(3, 3) <<
+    //     0.4124564f, 0.3575761f, 0.1804375f,
+    //     0.2126729f, 0.7151522f, 0.0721750f,
+    //     0.0193339f, 0.1191920f, 0.9503041f
+    // );
+
     const Mat M_CONV = (Mat_<float>(3, 3) <<
-        0.4124564f, 0.3575761f, 0.1804375f,
-        0.2126729f, 0.7151522f, 0.0721750f,
-        0.0193339f, 0.1191920f, 0.9503041f
+        0.4124f, 0.3576f, 0.1805f,
+        0.2126f, 0.7152f, 0.0722f,
+        0.0193f, 0.1192f, 0.9505f
     );
 
     Mat srcFloat;
@@ -183,10 +191,16 @@ Mat CIEXYZ_2_RGB(const Mat &src) {
         return output;
     }
 
+    // const Mat M_CONV = (Mat_<float>(3, 3) <<
+    //      3.2404542f, -1.5371385f, -0.4985314f,
+    //     -0.9692660f,  1.8760108f,  0.0415560f,
+    //      0.0556434f, -0.2040259f,  1.0572252f
+    // );
+
     const Mat M_CONV = (Mat_<float>(3, 3) <<
-         3.2404542f, -1.5371385f, -0.4985314f,
-        -0.9692660f,  1.8760108f,  0.0415560f,
-         0.0556434f, -0.2040259f,  1.0572252f
+         3.2410f, -1.5374f, -0.4986f,
+        -0.9692f,  1.8760f,  0.0416f,
+         0.0556f, -0.2040f,  1.0570f
     );
 
     output = Mat::zeros(src.rows, src.cols, CV_32FC3);
@@ -201,6 +215,95 @@ Mat CIEXYZ_2_RGB(const Mat &src) {
     // Convert back again to a range between 0-255 and uchar
     normalize(output, output, 0, 255, NORM_MINMAX);
     output.convertTo(output, CV_8UC3);
+
+    return output;
+}
+
+int *getImageHistogram(const Mat &src) {
+    if(!src.data) {
+        cout << "\n\t! getImageHistogram: Image is empty! Please input an image with actual content." << endl;
+    }
+}
+
+// Histogram stuff
+Mat createHistogram(const Mat &src, string title, int width, int height) {
+    Mat output = Mat::zeros(1, 1, CV_32FC3);
+
+    if(!src.data) {
+        cout << "\n\t! createHistogram: Image is empty! Please input an image with actual content." << endl;
+        return output;
+    }
+
+    const int MARGIN = 20;
+
+    int fontFace = FONT_ITALIC,
+        thicknessTitle = 1,
+        thicknessText  = 1;
+
+    double fontScaleTitle = 0.7,
+           fontScaleText  = 0.3;
+
+    width  = ( width < 572) ? 572 : width;
+    height = (height < 572) ? 572 : height;
+
+    Size titleSize = getTextSize(title, fontFace, fontScaleTitle, thicknessTitle, 0);
+
+    Mat globalContainer(height, width, CV_8UC3, Vec3b(230, 230, 230));
+
+    Mat histContainer(height - (MARGIN * 3 + titleSize.height), width - (MARGIN * 2), CV_8UC3, Vec3b(0, 0, 255)),
+        gradContainer(MARGIN + 10, width - (MARGIN * 2), CV_8UC3, Vec3b(255, 0, 0));
+    
+    putText(
+        globalContainer,
+        title,
+        Point((histContainer.cols / 2) - (titleSize.width / 2), MARGIN + (titleSize.height)),
+        fontFace,
+        fontScaleTitle,
+        0,
+        thicknessTitle,
+        LINE_8,
+        false
+    );
+
+    imshow("globalContainer", globalContainer);
+    imshow("histContainer", histContainer);
+
+    histContainer.copyTo(
+        globalContainer(
+            Rect(
+                MARGIN,
+                2 * MARGIN + titleSize.height,
+                histContainer.cols,
+                histContainer.rows
+            )
+        )
+    );
+
+    gradContainer.copyTo(
+        globalContainer(
+            Rect(
+                MARGIN,
+                MARGIN + histContainer.rows,
+                gradContainer.cols,
+                gradContainer.rows
+            )
+        )
+    );
+
+    imshow("globalContainer", globalContainer);
+
+    switch(src.channels()) {
+        case 1:
+            cout << "The image has three channels" << endl;
+            // histContainer = Mat(height - (MARGIN * 2), width - (MARGIN * 2), CV_8UC3, (0, 0, 255));
+            // histContainer.copyTo(globalContainer(Rect(MARGIN, MARGIN, width - MARGIN, height - MARGIN)));
+            // imshow("histContainer", histContainer);
+        break;
+
+        case 3:
+            cout << "The image has three channels" << endl;
+        break;
+    }
 
     return output;
 }
