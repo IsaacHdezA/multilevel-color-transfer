@@ -14,9 +14,9 @@ using namespace cv;
 inline float CIELAB_f(float t) {
     const float SIGMA = 6.0/29.0;
 
-    return (t > (SIGMA * SIGMA * SIGMA)) ?
+    return (t > (powf(SIGMA, 3))) ?
            cbrtf(t) :
-           (t / (3 * (SIGMA * SIGMA))) + (16.0 / 116.0);
+           (t / (3 * powf(SIGMA, 2))) + (16.0 / 116.0);
 
     // return (t > (powf(SIGMA, 3))) ?
     //        cbrtf(t) :
@@ -55,10 +55,13 @@ int main(void) {
          << "\t-> Original LAB pixel: "      << ciexyz_cielab.at<Vec3f>(0, 0) << '\n'
          << "\t-> Pixel back in XYZ space: " << cielab_ciexyz.at<Vec3f>(0, 0) << endl;
 
-    Mat ciexyz_rgb = CIEXYZ_2_RGB(rgb_ciexyz);
+    Mat ciexyz_rgb = CIEXYZ_2_RGB(cielab_ciexyz);
     cout << "CIEXYZ_2_RGB:" << '\n'
-         << "\t-> Original XYZ pixel: "      << rgb_ciexyz.at<Vec3f>(0, 0) << '\n'
-         << "\t-> Pixel back in RGB space: " << ciexyz_rgb.at<Vec3b>(0, 0) << endl;
+         << "\t-> Original XYZ pixel: "      << cielab_ciexyz.at<Vec3f>(0, 0) << '\n'
+         << "\t-> Pixel back in RGB space: " <<    ciexyz_rgb.at<Vec3b>(0, 0) << endl;
+
+    imshow("Original", src);
+    imshow("Conversion", ciexyz_rgb);
 
     // Mat rgb_cielab_cv;
     // src.convertTo(src, CV_32FC3, 1.0 / 255.0);
@@ -79,15 +82,13 @@ Mat RGB_2_CIEXYZ(const Mat &src) {
     }
 
     const Mat M_CONV = (Mat_<float>(3, 3) <<
-        0.4124f, 0.3576f, 0.1805f,
-        0.2126f, 0.7152f, 0.0722f,
-        0.0193f, 0.1192f, 0.9505f
+        0.4124564f, 0.3575761f, 0.1804375f,
+        0.2126729f, 0.7151522f, 0.0721750f,
+        0.0193339f, 0.1191920f, 0.9503041f
     );
 
     Mat srcFloat;
     src.convertTo(srcFloat, CV_32FC3, 1.0 / 255.0, 0);
-
-    cout << "RGB_2_CIEXYZ RGB pixel [0-1]: " << srcFloat.at<Vec3f>(0, 0) << endl;
     output = Mat::zeros(src.rows, src.cols, CV_32FC3);
 
     for(int i = 0; i < srcFloat.rows; i++) {
@@ -155,15 +156,19 @@ Mat CIELAB_2_XYZ(const Mat &src) {
         for(int j = 0; j < src.cols; j++) {
             f_y = (row[j][0] + 16.0) / 166.0;
             f_x = f_y + (row[j][1] / 500.0);
-            f_z = f_y + (row[j][2] / 200.0);
+            f_z = f_y - (row[j][2] / 200.0);
+
+            // f_x *= X_n;
+            // f_y *= Y_n;
+            // f_z *= Z_n;
+
+            // out[j][0] = (f_x > SIGMA) ? powf(f_x, 3) : (f_x - FRAC) * 3 * powf(SIGMA, 2);
+            // out[j][1] = (f_y > SIGMA) ? powf(f_y, 3) : (f_y - FRAC) * 3 * powf(SIGMA, 2);
+            // out[j][2] = (f_z > SIGMA) ? powf(f_z, 3) : (f_z - FRAC) * 3 * powf(SIGMA, 2);
 
             out[j][0] = (f_x > SIGMA) ? (X_n * powf(f_x, 3)) : (f_x - FRAC);
             out[j][1] = (f_y > SIGMA) ? (Y_n * powf(f_y, 3)) : (f_y - FRAC);
             out[j][2] = (f_z > SIGMA) ? (Z_n * powf(f_z, 3)) : (f_z - FRAC);
-
-            // out[j][1] = Y_n * (1.0 / CIELAB_f((1.0 / 116.0) * (row[j][0] + 16)));
-            // out[j][0] = X_n * (1.0 / CIELAB_f((1.0 / 116.0) * (row[j][0] + 16) + ((1.0 / 500.0) * row[j][1])));
-            // out[j][2] = Z_n * (1.0 / CIELAB_f((1.0 / 116.0) * (row[j][0] + 16) - ((1.0 / 200.0) * row[j][2])));
         }
     }
 
@@ -179,9 +184,9 @@ Mat CIEXYZ_2_RGB(const Mat &src) {
     }
 
     const Mat M_CONV = (Mat_<float>(3, 3) <<
-         3.2410f, -1.5374f, -0.4986f,
-        -0.9692f,  1.8760f,  0.0416f,
-         0.0556f, -0.2040f,  1.0570f
+         3.2404542f, -1.5371385f, -0.4985314f,
+        -0.9692660f,  1.8760108f,  0.0415560f,
+         0.0556434f, -0.2040259f,  1.0572252f
     );
 
     output = Mat::zeros(src.rows, src.cols, CV_32FC3);
