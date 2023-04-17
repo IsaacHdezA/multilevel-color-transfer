@@ -28,6 +28,45 @@ Mat XYZ_2_CIELAB(const Mat &);
 Mat CIELAB_2_XYZ(const Mat &);
 Mat CIEXYZ_2_RGB(const Mat &);
 
+// K-means
+class MyPoint {
+    public:
+        MyPoint(float = 0, float = 0, float = 10);
+
+        // Functions
+        void draw(Mat &, float, float, float, float = 2) const;
+
+        // Members
+        float x;
+        float y;
+        float r;
+};
+
+MyPoint::MyPoint(float x, float y, float r) {
+    this->x = x;
+    this->y = y;
+    this->r = r;
+}
+
+void MyPoint::draw(Mat &canvas, float hue, float sat, float val, float thick) const {
+    cvtColor(canvas, canvas, COLOR_BGR2HSV_FULL);
+    circle(
+        canvas,
+        Point(this->x, this->y),
+        this->r,
+        Vec3f(hue, sat, val),
+        -1
+    );
+    circle(
+        canvas,
+        Point(this->x, this->y),
+        this->r,
+        Vec3f(hue, sat, val/2),
+        thick
+    );
+    cvtColor(canvas, canvas, COLOR_HSV2BGR_FULL);
+}
+
 int main(void) {
     const string IMG_PATH = "./res/",
                  IMG_EXT = ".jpg",
@@ -63,12 +102,20 @@ int main(void) {
     imshow("Original", src);
     imshow("Conversion", ciexyz_rgb);
 
-    // Mat rgb_cielab_cv;
-    // src.convertTo(src, CV_32FC3, 1.0 / 255.0);
-    // cvtColor(rgb_ciexyz, rgb_cielab_cv, COLOR_RGB2Lab);
-    // cout << "RGB_2_CIELAB:" << '\n'
-    //      << "\t-> Original RGB pixel: " <<           src.at<Vec3f>(0, 0) << '\n'
-    //      << "\t-> Pixel in LAB space: " << rgb_cielab_cv.at<Vec3f>(0, 0) << endl;
+    // K-means help
+    Mat kMeansCanvas(800, 800, CV_32FC3, Vec3f(255, 255, 255));
+    MyPoint p(kMeansCanvas.cols / 2, kMeansCanvas.rows / 2, 50);
+
+    float h = 0;
+    while(true) {
+        h = (int) h % 360;
+
+        p.draw(kMeansCanvas, h, 1.0, 1.0, 10);
+        h++;
+        imshow("Sexo", kMeansCanvas);
+
+        if(waitKey(10) >= 0) break;
+    }
 
     waitKey();
 }
@@ -204,3 +251,4 @@ Mat CIEXYZ_2_RGB(const Mat &src) {
 
     return output;
 }
+
