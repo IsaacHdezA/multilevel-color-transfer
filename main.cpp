@@ -1,5 +1,6 @@
 #include <iostream>
 #include <cmath>
+#include <ctime>
 
 using namespace std;
 
@@ -22,6 +23,8 @@ inline float CIELAB_f(float t) {
     //        cbrtf(t) :
     //        ((1.0/3.0) * (powf(1.0/SIGMA, 2) * t)) + (4.0 / 29.0);
 }
+
+inline int randInt(int min, int max = 0) { return (rand() % (max - min)) + min; }
 
 Mat RGB_2_CIEXYZ(const Mat &);
 Mat XYZ_2_CIELAB(const Mat &);
@@ -48,8 +51,8 @@ MyPoint::MyPoint(float x, float y, float r) {
     this->r = r;
 }
 
+// ! Mat &canvas should be HSL
 void MyPoint::draw(Mat &canvas, float hue, float sat, float val, float thick) const {
-    cvtColor(canvas, canvas, COLOR_BGR2HSV_FULL);
     circle(
         canvas,
         Point(this->x, this->y),
@@ -64,10 +67,11 @@ void MyPoint::draw(Mat &canvas, float hue, float sat, float val, float thick) co
         Vec3f(hue, sat, val/2),
         thick
     );
-    cvtColor(canvas, canvas, COLOR_HSV2BGR_FULL);
 }
 
 int main(void) {
+    srand(time(0));
+
     const string IMG_PATH = "./res/",
                  IMG_EXT = ".jpg",
                  IMG_SRC_NAME = "test1",
@@ -99,23 +103,68 @@ int main(void) {
          << "\t-> Original XYZ pixel: "      << cielab_ciexyz.at<Vec3f>(0, 0) << '\n'
          << "\t-> Pixel back in RGB space: " <<    ciexyz_rgb.at<Vec3b>(0, 0) << endl;
 
-    imshow("Original", src);
-    imshow("Conversion", ciexyz_rgb);
+    // imshow("Original", src);
+    // imshow("Conversion", ciexyz_rgb);
 
     // K-means help
+    const int CLUSTERS = 5,
+              TOTAL_POINTS = 500,
+              P_RADIUS = 10;
+
+    MyPoint points[TOTAL_POINTS],
+            centroids[CLUSTERS];
+
+    int memberships[TOTAL_POINTS],
+        cluster_colors[CLUSTERS];
+
     Mat kMeansCanvas(800, 800, CV_32FC3, Vec3f(255, 255, 255));
-    MyPoint p(kMeansCanvas.cols / 2, kMeansCanvas.rows / 2, 50);
 
-    float h = 0;
-    while(true) {
-        h = (int) h % 360;
+    // Setup
+    // Initializing points
+    cout << "Initializing points..." << endl;
+    for(int i = 0; i < TOTAL_POINTS; i++) {
+        points[i] = MyPoint(
+            randInt(P_RADIUS, kMeansCanvas.cols - P_RADIUS),
+            randInt(P_RADIUS, kMeansCanvas.rows - P_RADIUS),
+            P_RADIUS
+        );
 
-        p.draw(kMeansCanvas, h, 1.0, 1.0, 10);
-        h++;
-        imshow("Sexo", kMeansCanvas);
-
-        if(waitKey(10) >= 0) break;
+        memberships[i] = randInt(0, CLUSTERS);
     }
+    cout << "Initializing points finished." << endl;
+
+    // Initializing centroids and their colors
+    cout << "Initializing centroids..." << endl;
+    int colors = 0;
+    for(int i = 0; i < CLUSTERS; i++) {
+        int color = randInt(0, 360);
+        for(int j = 0; j < colors; j++)
+            if(color == cluster_colors[i]) color = randInt(0, 360);
+        
+        cluster_colors[i] = color;
+        colors++;
+
+        int randId = randInt(0, TOTAL_POINTS);
+        centroids[i] = MyPoint(
+            points[randId].x,
+            points[randId].y,
+            P_RADIUS * 1.5
+        );
+    }
+    cout << "Initializing centroids." << endl;
+
+    // Drawing points and centroids
+    cout << "Drawing frame..." << endl;
+    cvtColor(kMeansCanvas, kMeansCanvas, COLOR_BGR2HSV_FULL);
+    for(int i = 0; i < TOTAL_POINTS; i++)
+        points[i].draw(kMeansCanvas, cluster_colors[memberships[i]], 1.0, 1.0);
+
+    for(int i = 0; i < CLUSTERS; i++)
+        centroids[i].draw(kMeansCanvas, cluster_colors[i], 1.0, 0.5);
+    cvtColor(kMeansCanvas, kMeansCanvas, COLOR_HSV2BGR_FULL);
+    cout << "Drawing frame finished." << endl;
+
+    imshow("Points", kMeansCanvas);
 
     waitKey();
 }
