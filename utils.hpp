@@ -12,6 +12,7 @@ using cv::Mat;
 using cv::Mat_;
 using cv::Vec3f;
 using cv::Vec3b;
+using cv::Scalar;
 
 // Utils
 inline float fast_inv_sqrt(float n) {
@@ -101,6 +102,8 @@ float distance(const Scalar &p1, const Scalar &p2) {
 
     return sqrt(sum);
 }
+
+inline float mapNum(float x, float start1, float stop1, float start2, float stop2) { return (((stop2 - start2)/(stop1 - start1)) * (x - start1)) + start2; }
 
 // Color Space Transformations
 Mat RGB_2_XYZ(const Mat &src) {

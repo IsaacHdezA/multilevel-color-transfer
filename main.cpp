@@ -70,15 +70,79 @@ int main(void) {
                 if(cumHists[i].at<float>(k) <= (STEP * (j + 1)))
                     thresh = k;
                 cout << cumHists[i].at<float>(thresh) << endl;
-            thresholds[i].push_back(thresh);
+            thresholds[i].push_back(mapNum(thresh, 0, cumHists[i].rows, -127, 128));
+            // thresholds[i].push_back(cumHists[i].at<float>(thresh));
         }
+    }
+
+    vector<vector<Mat>> segmentedImages;
+    vector<Mat> segments;
+
+    // i is for the channels
+    // j is for the thresholds
+    // k is for the output image row
+    // l is for the output image row column
+    // m is for the 
+
+    for(int i = 0; i < srcLab.channels(); i++) {
+        cout << "Channel " << i << endl;
+        segments.clear();
+
+        // Creating image for segment 0
+        Mat temp = Mat::zeros(srcLab.rows, srcLab.cols, CV_32FC3);
+        for(int j = 0; j < temp.rows; j++) {
+            Vec3f *row = (Vec3f *) srcLab.ptr<Vec3f>(j),
+                  *out = (Vec3f *)   temp.ptr<Vec3f>(j);
+
+            for(int k = 0; k < temp.cols; k++)
+                if(row[k][i] >= -127 && row[k][i] < thresholds[i][0])
+                    out[k] = row[k];
+        }
+        segments.push_back(temp.clone());
+
+        // Creating image for segments 1-(SEGMENTS - 1)
+        for(int j = 1; j < SEGMENTS - 1; j++) {
+            temp = Mat::zeros(src.rows, src.cols, CV_32FC3);
+            for(int k = 0; k < temp.rows; k++) {
+                Vec3f *row = (Vec3f *) srcLab.ptr<Vec3f>(k),
+                      *out = (Vec3f *)   temp.ptr<Vec3f>(k);
+                
+                for(int l = 0; l < temp.cols; l++) {
+                    if(row[l][i] >= thresholds[i][j - 1] && row[l][i] < thresholds[i][j])
+                        out[l] = row[l];
+                }
+                
+            }
+            segments.push_back(temp.clone());
+        }
+
+        // // Creating image for the last segment
+        temp = Mat::zeros(src.rows, src.cols, CV_32FC3);
+        for(int j = 0; j < temp.rows; j++) {
+            Vec3f *row = (Vec3f *) srcLab.ptr<Vec3f>(j),
+                  *out = (Vec3f *)   temp.ptr<Vec3f>(j);
+
+            for(int k = 0; k < temp.cols; k++)
+                if(row[k][i] >= thresholds[i][THRESHOLDS] && row[k][i] < 128)
+                    out[k] = row[k];
+        }
+        segments.push_back(temp.clone());
+        segmentedImages.push_back(segments);
+    }
+
+    for(int i = 0; i < segmentedImages.size(); i++) {
+        for(int j = 0; j < segmentedImages[i].size(); j++)
+            imshow(
+                "Channel " + to_string(i) + ", segment " + to_string(j),
+                CIELAB_2_RGB(segmentedImages[i][j]));
+        waitKey();
     }
 
     cout << "[";
     for(int i = 0; i < thresholds.size(); i++) {
         cout << "[";
         for(int j = 0; j < thresholds[i].size(); j++) {
-            cout << thresholds[i][j] << ((j + 1 == thresholds[i].size()) ? "" : ", ");
+            cout << (float) thresholds[i][j] << ((j + 1 == thresholds[i].size()) ? "" : ", ");
         }
         cout << "]" << ((i + 1) == thresholds.size() ? "" : ", ");
     }
