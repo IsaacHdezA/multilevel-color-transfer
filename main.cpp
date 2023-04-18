@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 #include <cmath>
 #include <ctime>
 
@@ -39,6 +40,7 @@ Mat RGB_2_CIELAB(const Mat &);
 Mat CIELAB_2_RGB(const Mat &);
 
 // Utils
+inline int randInt(int min, int max) { return (rand() % (max - min)) + min; }
 template<class T>
 void channelMinMax(const Mat &src, T &min, T &max) {
     if(!src.data) {
@@ -58,6 +60,8 @@ void channelMinMax(const Mat &src, T &min, T &max) {
         }
     }
 }
+
+Mat showHist(const vector<Mat> &);
 
 int main(void) {
     srand(time(0));
@@ -99,7 +103,112 @@ int main(void) {
          << "\t\t- Min (b channel): " << min_b << '\n'
          << "\t\t- Max (b channel): " << max_b << endl;
 
+    int histSize = 256;
+    float range[] = {-127, 128};
+    const float *histRange[] = {range};
+
+    vector<Mat> hists(srcLabChannels.size());
+
+    calcHist(&srcLabChannels[0], 1, 0, Mat(), hists[0], 1, &histSize, histRange, true, false);
+    calcHist(&srcLabChannels[1], 1, 0, Mat(), hists[1], 1, &histSize, histRange, true, false);
+    calcHist(&srcLabChannels[2], 1, 0, Mat(), hists[2], 1, &histSize, histRange, true, false);
+
+    Mat histContainer = showHist(hists);
+    imshow("Hist", histContainer);
+
+    // Calculating cumulative hist
+    vector<Mat> cum_hists(hists.size());
+    for(int i = 0; i < hists.size(); i++)
+        cum_hists[i] = hists[i].clone();
+
+    for(int i = 0; i < cum_hists.size(); i++)
+        for(int j = 1; j < cum_hists[i].rows; j++)
+            cum_hists[i].at<float>(j) += cum_hists[i].at<float>(j - 1);
+    
+    Mat histCumContainer = showHist(cum_hists);
+    imshow("Cum Hist", histCumContainer);
+
+    // normalize(l_hist_cum, l_hist_cum, 0, 1, NORM_MINMAX);
+    // normalize(a_hist_cum, a_hist_cum, 0, 1, NORM_MINMAX);
+    // normalize(b_hist_cum, b_hist_cum, 0, 1, NORM_MINMAX);
+
     waitKey();
+}
+
+Mat showHist(const vector<Mat> &hists) {
+    const int CONTAINER_PADDING = 20;
+    int hist_w = 512, hist_h = 400;
+    int bin_w = cvRound((double) hist_w/hists[0].rows);
+
+    Mat histContainer(hist_h + CONTAINER_PADDING * 2, hist_w + CONTAINER_PADDING * 2, CV_8UC3, Scalar(230, 230, 230)),
+        histImage(hist_h, hist_w, CV_8UC3, Scalar(255, 255, 255));
+
+    vector<Mat> histsCopies(hists.size());
+    for(int i = 0; i < hists.size(); i++)
+        histsCopies[i] = hists[i].clone();
+
+    for(int i = 0; i < histsCopies.size(); i++)
+        normalize(histsCopies[i], histsCopies[i], 0, histImage.rows, NORM_MINMAX, -1, Mat());
+
+    int fontFace = FONT_ITALIC,
+        thicknessText = 1;
+
+    double fontScaleText = 0.3;
+    Size textSize = getTextSize("Channel 1", fontFace, fontScaleText, thicknessText, 0);
+
+    for(int i = 0; i < histsCopies.size(); i++) {
+        Scalar histColor(
+            randInt(0, 255),
+            randInt(0, 255),
+            randInt(0, 255)
+        );
+
+        line(
+            histImage,
+            Point(10, (10 * (i + 1)) + textSize.height / 2),
+            Point(25, (10 * (i + 1)) + textSize.height / 2),
+            histColor,
+            2,
+            8,
+            0
+        );
+
+        putText(
+            histImage,
+            "Channel " + to_string(i),
+            Point(35, ((10 + textSize.height / 2) * (i + 1))),
+            fontFace,
+            fontScaleText,
+            0,
+            thicknessText,
+            LINE_8,
+            false
+        );
+
+        for(int j = 1; j < histsCopies[i].rows; j++) {
+            line(
+                histImage,
+                Point(bin_w * (j - 1), hist_h - cvRound(histsCopies[i].at<float>(j - 1))),
+                Point(bin_w * (j),     hist_h - cvRound(histsCopies[i].at<float>(j))),
+                histColor,
+                2,
+                8,
+                0
+            );
+        }
+    }
+
+    histImage.copyTo(histContainer(Rect(CONTAINER_PADDING, CONTAINER_PADDING, histImage.cols, histImage.rows)));
+    rectangle(
+        histContainer,
+        Point(CONTAINER_PADDING, CONTAINER_PADDING),
+        Point(CONTAINER_PADDING + histImage.cols, CONTAINER_PADDING + histImage.rows),
+        0,
+        1,
+        LINE_8
+    );
+
+    return histContainer;
 }
 
 Mat RGB_2_CIEXYZ(const Mat &src) {
