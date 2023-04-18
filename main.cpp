@@ -54,12 +54,35 @@ int main(void) {
     Mat histCumContainer = showHist(cumHists);
     imshow("CIELAB Cum Hist", histCumContainer);
 
-    // for(int i = 0; i < cumHists.size(); i++) {
-    //     normalize(cumHists[i], cumHists[i], 0, 1, NORM_MINMAX);
-    //     for(int j = 1; j < cumHists[i].rows; j++) {
+    const int SEGMENTS = 4,
+              THRESHOLDS = SEGMENTS - 1;
+    const float STEP = 1.0 / SEGMENTS;
+    vector<vector<float>> thresholds(SEGMENTS - 1);
 
-    //     }
-    // }
+    cout << "Thresholds: " << SEGMENTS << '\n'
+         << "Step: " << STEP << endl;
+
+    for(int i = 0; i < cumHists.size(); i++) {
+        normalize(cumHists[i], cumHists[i], 0, 1, NORM_MINMAX);
+        for(int j = 0; j < THRESHOLDS; j++) {
+            int thresh = 0;
+            for(int k = 0; k < cumHists[i].rows; k++)
+                if(cumHists[i].at<float>(k) <= (STEP * (j + 1)))
+                    thresh = k;
+                cout << cumHists[i].at<float>(thresh) << endl;
+            thresholds[i].push_back(thresh);
+        }
+    }
+
+    cout << "[";
+    for(int i = 0; i < thresholds.size(); i++) {
+        cout << "[";
+        for(int j = 0; j < thresholds[i].size(); j++) {
+            cout << thresholds[i][j] << ((j + 1 == thresholds[i].size()) ? "" : ", ");
+        }
+        cout << "]" << ((i + 1) == thresholds.size() ? "" : ", ");
+    }
+    cout << "]" << endl;
 
     waitKey();
 }
@@ -98,7 +121,7 @@ vector<Mat> getCumHists(const Mat &src, int hSize, int minR, int maxR) {
     for(int i = 0; i < cumHists.size(); i++)
         for(int j = 1; j < cumHists[i].rows; j++)
             cumHists[i].at<float>(j) += cumHists[i].at<float>(j - 1);
-    
+
     return cumHists;
 }
 
