@@ -136,7 +136,8 @@ int main(void) {
 }
 
 Mat showHist(const vector<Mat> &hists) {
-    const int CONTAINER_PADDING = 20;
+    const int CONTAINER_PADDING = 20,
+              HIST_PADDING = 10;
     int hist_w = 512, hist_h = 400;
     int bin_w = cvRound((double) hist_w/hists[0].rows);
 
@@ -165,8 +166,8 @@ Mat showHist(const vector<Mat> &hists) {
 
         line(
             histImage,
-            Point(10, (10 * (i + 1)) + textSize.height / 2),
-            Point(25, (10 * (i + 1)) + textSize.height / 2),
+            Point(HIST_PADDING * 1.2, ((HIST_PADDING * 1.2) * (i + 1)) + textSize.height/2 + 5),
+            Point(HIST_PADDING + 15,  ((HIST_PADDING * 1.2) * (i + 1)) + textSize.height/2 + 5),
             histColor,
             2,
             8,
@@ -176,7 +177,7 @@ Mat showHist(const vector<Mat> &hists) {
         putText(
             histImage,
             "Channel " + to_string(i),
-            Point(35, ((10 + textSize.height / 2) * (i + 1))),
+            Point(HIST_PADDING + 25, (((HIST_PADDING * 1.2) + textSize.height / 2) * (i + 1)) + 5),
             fontFace,
             fontScaleText,
             0,
@@ -197,6 +198,15 @@ Mat showHist(const vector<Mat> &hists) {
             );
         }
     }
+
+    rectangle(
+        histImage,
+        Point(HIST_PADDING - 5, HIST_PADDING - textSize.height + 5),
+        Point(HIST_PADDING + 25 + textSize.width + 5, HIST_PADDING + ((textSize.height * 2) * histsCopies.size()) + 5),
+        0,
+        1,
+        LINE_8
+    );
 
     histImage.copyTo(histContainer(Rect(CONTAINER_PADDING, CONTAINER_PADDING, histImage.cols, histImage.rows)));
     rectangle(
