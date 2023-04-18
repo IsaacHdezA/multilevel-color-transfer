@@ -33,17 +33,25 @@ Mat CIEXYZ_2_RGB(const Mat &);
 
 // K-means
 class MyPoint {
+    friend ostream &operator<< (ostream &, const MyPoint &);
     public:
         MyPoint(float = 0, float = 0, float = 10);
 
         // Functions
         void draw(Mat &, float, float, float, float = 2) const;
+        float distance(const MyPoint &) const;
 
         // Members
         float x;
         float y;
         float r;
 };
+
+ostream &operator<<(ostream &output, const MyPoint &right) {
+    output << "(" << right.x << ", " << right.y << ")";
+
+    return output;
+}
 
 MyPoint::MyPoint(float x, float y, float r) {
     this->x = x;
@@ -67,6 +75,55 @@ void MyPoint::draw(Mat &canvas, float hue, float sat, float val, float thick) co
         Vec3f(hue, sat, val/2),
         thick
     );
+}
+
+float MyPoint::distance(const MyPoint &p) const {
+    return sqrt(powf((p.x - this->x), 2) + powf((p.y - this->y), 2));
+}
+
+int minIdx(const float *data, int size) {
+    float min = data[0];
+    int id = 0;
+
+    for(int i = 0; i < size; i++)
+        if(data[i] < min) {
+            min = data[i];
+            id = i;
+        }
+
+    return id;
+}
+
+void findClosestCentroids(const MyPoint *data, const MyPoint *centroids, int *memberships, int data_size, int centroids_size) {
+    float *distances = new float[centroids_size];
+
+    for(int i = 0; i < data_size; i++) {
+        for(int j = 0; j < centroids_size; j++)
+            distances[j] = data[i].distance(centroids[j]);
+
+        memberships[i] = minIdx(distances, centroids_size);
+    }
+
+    delete [] distances;
+}
+
+void computeCentroids(const MyPoint *data, MyPoint *centroids, const int *memberships, int data_size, int centroids_size) {
+    for(int i = 0; i < centroids_size; i++) {
+        int sumX = 0,
+            sumY = 0,
+            count = 0;
+        for(int j = 0; j < data_size; j++) {
+            if(memberships[j] == i) {
+                sumX += data[j].x;
+                sumY += data[j].y;
+                count++;
+            }
+        }
+
+        if(count <= 0) continue;
+        centroids[i].x = sumX / count;
+        centroids[i].y = sumY / count;
+    }
 }
 
 int main(void) {
@@ -107,9 +164,9 @@ int main(void) {
     // imshow("Conversion", ciexyz_rgb);
 
     // K-means help
-    const int CLUSTERS = 5,
-              TOTAL_POINTS = 500,
-              P_RADIUS = 10;
+    const int CLUSTERS = 10,
+              TOTAL_POINTS = 100000,
+              P_RADIUS = 2;
 
     MyPoint points[TOTAL_POINTS],
             centroids[CLUSTERS];
@@ -117,11 +174,10 @@ int main(void) {
     int memberships[TOTAL_POINTS],
         cluster_colors[CLUSTERS];
 
-    Mat kMeansCanvas(800, 800, CV_32FC3, Vec3f(255, 255, 255));
+    Mat kMeansCanvas(800, 1200, CV_32FC3, Vec3f(255, 255, 255));
 
     // Setup
     // Initializing points
-    cout << "Initializing points..." << endl;
     for(int i = 0; i < TOTAL_POINTS; i++) {
         points[i] = MyPoint(
             randInt(P_RADIUS, kMeansCanvas.cols - P_RADIUS),
@@ -131,16 +187,14 @@ int main(void) {
 
         memberships[i] = randInt(0, CLUSTERS);
     }
-    cout << "Initializing points finished." << endl;
 
     // Initializing centroids and their colors
-    cout << "Initializing centroids..." << endl;
     int colors = 0;
     for(int i = 0; i < CLUSTERS; i++) {
         int color = randInt(0, 360);
         for(int j = 0; j < colors; j++)
             if(color == cluster_colors[i]) color = randInt(0, 360);
-        
+
         cluster_colors[i] = color;
         colors++;
 
@@ -148,23 +202,30 @@ int main(void) {
         centroids[i] = MyPoint(
             points[randId].x,
             points[randId].y,
-            P_RADIUS * 1.5
+            P_RADIUS * 2
         );
     }
-    cout << "Initializing centroids." << endl;
 
     // Drawing points and centroids
-    cout << "Drawing frame..." << endl;
-    cvtColor(kMeansCanvas, kMeansCanvas, COLOR_BGR2HSV_FULL);
-    for(int i = 0; i < TOTAL_POINTS; i++)
-        points[i].draw(kMeansCanvas, cluster_colors[memberships[i]], 1.0, 1.0);
+    const int ITER = 80;
+    for(int i = 0; i < ITER; i++) {
+        kMeansCanvas = Mat(kMeansCanvas.rows, kMeansCanvas.cols, CV_32FC3, Vec3f(255, 255, 255));
 
-    for(int i = 0; i < CLUSTERS; i++)
-        centroids[i].draw(kMeansCanvas, cluster_colors[i], 1.0, 0.5);
-    cvtColor(kMeansCanvas, kMeansCanvas, COLOR_HSV2BGR_FULL);
-    cout << "Drawing frame finished." << endl;
+        cvtColor(kMeansCanvas, kMeansCanvas, COLOR_BGR2HSV_FULL);
+        for(int i = 0; i < TOTAL_POINTS; i++)
+            points[i].draw(kMeansCanvas, cluster_colors[memberships[i]], 1.0, 1.0, 1);
 
-    imshow("Points", kMeansCanvas);
+        for(int i = 0; i < CLUSTERS; i++)
+            centroids[i].draw(kMeansCanvas, cluster_colors[i], 1.0, 0.5, 1);
+        cvtColor(kMeansCanvas, kMeansCanvas, COLOR_HSV2BGR_FULL);
+        imshow("Points", kMeansCanvas);
+
+        findClosestCentroids(points, centroids, memberships, TOTAL_POINTS, CLUSTERS);
+        computeCentroids(points, centroids, memberships, TOTAL_POINTS, CLUSTERS);
+
+        if(waitKey(30) >= 0) break;
+    }
+    cout << "Finished" << endl;
 
     waitKey();
 }
@@ -173,7 +234,7 @@ Mat RGB_2_CIEXYZ(const Mat &src) {
     Mat output = Mat::zeros(1, 1, CV_32FC3);
 
     if(!src.data || src.channels() == 1) {
-        cout << "\n\t! RGB_2_CIEXYZ: Image is empty or monochromatic. Should be three channels (BGR)." << endl;
+        cout << "\n\t! RGB_2_CIEXYZ: Image is empty orh monochromatic. Should be three channels (BGR)." << endl;
         return output;
     }
 
