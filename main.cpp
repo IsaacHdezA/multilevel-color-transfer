@@ -20,10 +20,6 @@ inline float CIELAB_f(float t) {
     return (t > (powf(SIGMA, 3))) ?
            cbrtf(t) :
            (t / (3 * powf(SIGMA, 2))) + CTE;
-
-    // return (t > (powf(SIGMA, 3))) ?
-    //        cbrtf(t) :
-    //        ((1.0/3.0) * (powf(1.0/SIGMA, 2) * t)) + CTE;
 }
 
 inline float CIELAB_f_1(float t) {
@@ -169,9 +165,7 @@ Mat CIELAB_2_CIEXYZ(const Mat &src) {
           f_z = 0;
 
     // Tristimulus values from Illuminant D65 2°
-    const float SIGMA = 6.0/29.0,
-                FRAC  = 16.0/116.0,
-                X_n = 0.950489,
+    const float X_n = 0.950489,
                 Y_n = 1.000000,
                 Z_n = 1.088840;
 
@@ -179,29 +173,6 @@ Mat CIELAB_2_CIEXYZ(const Mat &src) {
         Vec3f *row = (Vec3f *)    src.ptr<Vec3f>(i),
               *out = (Vec3f *) output.ptr<Vec3f>(i);
         for(int j = 0; j < src.cols; j++) {
-            // Method 1
-            // f_y = (row[j][0] + 16.0) / 166.0;
-            // f_x = f_y + (row[j][1] / 500.0);
-            // f_z = f_y - (row[j][2] / 200.0);
-
-            // out[j][0] = (f_x > SIGMA) ? (X_n * powf(f_x, 3)) : (f_x - FRAC);
-            // out[j][1] = (f_y > SIGMA) ? (Y_n * powf(f_y, 3)) : (f_y - FRAC);
-            // out[j][2] = (f_z > SIGMA) ? (Z_n * powf(f_z, 3)) : (f_z - FRAC);
-
-            // Method 2
-            // f_y = (row[j][0] + 16.0) / 166.0;
-            // f_x = f_y + (row[j][1] / 500.0);
-            // f_z = f_y - (row[j][2] / 200.0);
-
-            // f_x *= X_n;
-            // f_y *= Y_n;
-            // f_z *= Z_n;
-
-            // out[j][0] = (f_x > SIGMA) ? powf(f_x, 3) : (f_x - FRAC) * 3 * powf(SIGMA, 2);
-            // out[j][1] = (f_y > SIGMA) ? powf(f_y, 3) : (f_y - FRAC) * 3 * powf(SIGMA, 2);
-            // out[j][2] = (f_z > SIGMA) ? powf(f_z, 3) : (f_z - FRAC) * 3 * powf(SIGMA, 2);
-
-            // Method 3
             f_x = CIELAB_f_1((row[j][0] + 16.0)/116.0 + (row[j][1]/500.0));
             f_y = CIELAB_f_1((row[j][0] + 16.0)/116.0);
             f_z = CIELAB_f_1((row[j][0] + 16.0)/116.0 - (row[j][2]/200.0));
@@ -252,4 +223,3 @@ Mat RGB_2_CIELAB(const Mat &src) {
 Mat CIELAB_2_RGB(const Mat &src) {
     return CIEXYZ_2_RGB(CIELAB_2_CIEXYZ(src));
 }
-
