@@ -14,15 +14,25 @@ using namespace cv;
 
 // Color space transformation
 inline float CIELAB_f(float t) {
-    const float SIGMA = 6.0/29.0;
+    const float SIGMA = 6.0/29.0,
+                CTE = 4.0/29.0;
 
     return (t > (powf(SIGMA, 3))) ?
            cbrtf(t) :
-           (t / (3 * powf(SIGMA, 2))) + (16.0 / 116.0);
+           (t / (3 * powf(SIGMA, 2))) + CTE;
 
     // return (t > (powf(SIGMA, 3))) ?
     //        cbrtf(t) :
-    //        ((1.0/3.0) * (powf(1.0/SIGMA, 2) * t)) + (4.0 / 29.0);
+    //        ((1.0/3.0) * (powf(1.0/SIGMA, 2) * t)) + CTE;
+}
+
+inline float CIELAB_f_1(float t) {
+    const float SIGMA = 6.0/29.0,
+                CTE = 4.0/29.0;
+    
+    return (t > SIGMA) ?
+           powf(t, 3) :
+           ((3 * powf(SIGMA, 2)) * (t - CTE));
 }
 
 Mat RGB_2_CIEXYZ(const Mat &);
@@ -37,7 +47,7 @@ int main(void) {
 
     const string IMG_PATH = "./res/",
                  IMG_EXT = ".jpg",
-                 IMG_SRC_NAME = "test1",
+                 IMG_SRC_NAME = "test3",
                  IMG_TRG_NAME = "test7",
                  IMG_SRC_FILENAME = IMG_PATH + IMG_SRC_NAME + IMG_EXT,
                  IMG_TRG_FILENAME = IMG_PATH + IMG_TRG_NAME + IMG_EXT;
@@ -49,11 +59,41 @@ int main(void) {
     Mat src_lab = RGB_2_CIELAB(src),
         trg_lab = RGB_2_CIELAB(trg);
     
-    imshow("Original Source", src);
-    imshow("Original Target", trg);
+    Mat src_rgb = CIELAB_2_RGB(src_lab);
 
-    Mat src_rgb = CIELAB_2_RGB(src_lab),
-        trg_rgb = CIELAB_2_RGB(trg_lab);
+    float min_l = src_lab.at<Vec3f>(0, 0)[0],
+          min_a = src_lab.at<Vec3f>(0, 0)[1],
+          min_b = src_lab.at<Vec3f>(0, 0)[2],
+          max_l = src_lab.at<Vec3f>(0, 0)[0],
+          max_a = src_lab.at<Vec3f>(0, 0)[1],
+          max_b = src_lab.at<Vec3f>(0, 0)[2];
+    
+    for(int i = 0; i < src_lab.rows; i++) {
+        Vec3f *row = src_lab.ptr<Vec3f>(i);
+        for(int j = 0; j < src_lab.cols; j++) {
+            if(row[j][0] <= min_l) min_l = row[j][0];
+            if(row[j][1] <= min_a) min_a = row[j][1];
+            if(row[j][2] <= min_b) min_b = row[j][2];
+
+            if(row[j][0] >= max_l) max_l = row[j][0];
+            if(row[j][1] >= max_a) max_a = row[j][1];
+            if(row[j][2] >= max_b) max_b = row[j][2];
+        }
+    }
+
+    imshow(IMG_SRC_NAME, src);
+    imshow(IMG_SRC_NAME + " converted", src_rgb);
+
+    cout << "From source, the values:\n"
+         << "\tL channel:\n"
+         << "\t\t- Min (L channel): " << min_l << '\n'
+         << "\t\t- Max (L channel): " << max_l << '\n'
+         << "\ta channel:\n"
+         << "\t\t- Min (a channel): " << min_a << '\n'
+         << "\t\t- Max (a channel): " << max_a << '\n'
+         << "\tb channel:\n"
+         << "\t\t- Min (b channel): " << min_b << '\n'
+         << "\t\t- Max (b channel): " << max_b << endl;
 
     waitKey();
 }
@@ -86,20 +126,20 @@ Mat RGB_2_CIEXYZ(const Mat &src) {
     return output;
 }
 
-Mat XYZ_2_CIELAB(const Mat &src) {
+Mat CIEXYZ_2_CIELAB(const Mat &src) {
     Mat output = Mat::zeros(1, 1, CV_32FC3);
 
     if(!src.data || src.channels() == 1) {
-        cout << "\n\t! XYZ_2_CIELAB: Image is empty or monochromatic. Should be three channels (BGR)." << endl;
+        cout << "\n\t! CIEXYZ_2_CIELAB: Image is empty or monochromatic. Should be three channels (BGR)." << endl;
         return output;
     }
 
     output = Mat::zeros(src.rows, src.cols, CV_32FC3);
 
     // Tristimulus values from Illuminant D65 2°
-    const float X_n = 0.95047,
-                Y_n = 1.00000,
-                Z_n = 1.08883;
+    const float X_n = 0.950489,
+                Y_n = 1.000000,
+                Z_n = 1.088840;
 
     for(int i = 0; i < src.rows; i++) {
         Vec3f *row = (Vec3f *) src.ptr<Vec3f>(i),
@@ -114,11 +154,11 @@ Mat XYZ_2_CIELAB(const Mat &src) {
     return output;
 }
 
-Mat CIELAB_2_XYZ(const Mat &src) {
+Mat CIELAB_2_CIEXYZ(const Mat &src) {
     Mat output = Mat::zeros(1, 1, CV_32FC3);
 
     if(!src.data || src.channels() == 1) {
-        cout << "\n\t! CIELAB_2_XYZ: Image is empty or monochromatic. Should be three channels (BGR)." << endl;
+        cout << "\n\t! CIELAB_2_CIEXYZ: Image is empty or monochromatic. Should be three channels (BGR)." << endl;
         return output;
     }
 
@@ -131,17 +171,27 @@ Mat CIELAB_2_XYZ(const Mat &src) {
     // Tristimulus values from Illuminant D65 2°
     const float SIGMA = 6.0/29.0,
                 FRAC  = 16.0/116.0,
-                X_n   = 0.95047,
-                Y_n   = 1.00000,
-                Z_n   = 1.08883;
+                X_n = 0.950489,
+                Y_n = 1.000000,
+                Z_n = 1.088840;
 
     for(int i = 0; i < src.rows; i++) {
         Vec3f *row = (Vec3f *)    src.ptr<Vec3f>(i),
               *out = (Vec3f *) output.ptr<Vec3f>(i);
         for(int j = 0; j < src.cols; j++) {
-            f_y = (row[j][0] + 16.0) / 166.0;
-            f_x = f_y + (row[j][1] / 500.0);
-            f_z = f_y - (row[j][2] / 200.0);
+            // Method 1
+            // f_y = (row[j][0] + 16.0) / 166.0;
+            // f_x = f_y + (row[j][1] / 500.0);
+            // f_z = f_y - (row[j][2] / 200.0);
+
+            // out[j][0] = (f_x > SIGMA) ? (X_n * powf(f_x, 3)) : (f_x - FRAC);
+            // out[j][1] = (f_y > SIGMA) ? (Y_n * powf(f_y, 3)) : (f_y - FRAC);
+            // out[j][2] = (f_z > SIGMA) ? (Z_n * powf(f_z, 3)) : (f_z - FRAC);
+
+            // Method 2
+            // f_y = (row[j][0] + 16.0) / 166.0;
+            // f_x = f_y + (row[j][1] / 500.0);
+            // f_z = f_y - (row[j][2] / 200.0);
 
             // f_x *= X_n;
             // f_y *= Y_n;
@@ -151,9 +201,14 @@ Mat CIELAB_2_XYZ(const Mat &src) {
             // out[j][1] = (f_y > SIGMA) ? powf(f_y, 3) : (f_y - FRAC) * 3 * powf(SIGMA, 2);
             // out[j][2] = (f_z > SIGMA) ? powf(f_z, 3) : (f_z - FRAC) * 3 * powf(SIGMA, 2);
 
-            out[j][0] = (f_x > SIGMA) ? (X_n * powf(f_x, 3)) : (f_x - FRAC);
-            out[j][1] = (f_y > SIGMA) ? (Y_n * powf(f_y, 3)) : (f_y - FRAC);
-            out[j][2] = (f_z > SIGMA) ? (Z_n * powf(f_z, 3)) : (f_z - FRAC);
+            // Method 3
+            f_x = CIELAB_f_1((row[j][0] + 16.0)/116.0 + (row[j][1]/500.0));
+            f_y = CIELAB_f_1((row[j][0] + 16.0)/116.0);
+            f_z = CIELAB_f_1((row[j][0] + 16.0)/116.0 - (row[j][2]/200.0));
+
+            out[j][0] = X_n * f_x;
+            out[j][1] = Y_n * f_y;
+            out[j][2] = Z_n * f_z;
         }
     }
 
@@ -191,10 +246,10 @@ Mat CIEXYZ_2_RGB(const Mat &src) {
 }
 
 Mat RGB_2_CIELAB(const Mat &src) {
-    return XYZ_2_CIELAB(RGB_2_CIEXYZ(src));
+    return CIEXYZ_2_CIELAB(RGB_2_CIEXYZ(src));
 }
 
 Mat CIELAB_2_RGB(const Mat &src) {
-    return CIEXYZ_2_RGB(CIELAB_2_XYZ(src));
+    return CIEXYZ_2_RGB(CIELAB_2_CIEXYZ(src));
 }
 
