@@ -25,7 +25,7 @@ inline float CIELAB_f(float t) {
 inline float CIELAB_f_1(float t) {
     const float SIGMA = 6.0/29.0,
                 CTE = 4.0/29.0;
-    
+
     return (t > SIGMA) ?
            powf(t, 3) :
            ((3 * powf(SIGMA, 2)) * (t - CTE));
@@ -38,12 +38,33 @@ Mat CIEXYZ_2_RGB(const Mat &);
 Mat RGB_2_CIELAB(const Mat &);
 Mat CIELAB_2_RGB(const Mat &);
 
+// Utils
+template<class T>
+void channelMinMax(const Mat &src, T &min, T &max) {
+    if(!src.data) {
+        cout << "channelMinMax: ! Image is empty. Please enter a valid image." << endl;
+        return;
+    }
+
+    // Assuming src is of type CV_32FC1
+    min = src.at<float>(0, 0);
+    max = min;
+
+    for(int i = 0; i < src.rows; i++) {
+        float *row = (float *) src.ptr<float>(i);
+        for(int j = 0; j < src.cols; j++) {
+            if(row[j] <= min) min = row[j];
+            if(row[j] >= max) max = row[j];
+        }
+    }
+}
+
 int main(void) {
     srand(time(0));
 
     const string IMG_PATH = "./res/",
                  IMG_EXT = ".jpg",
-                 IMG_SRC_NAME = "test3",
+                 IMG_SRC_NAME = "test2",
                  IMG_TRG_NAME = "test7",
                  IMG_SRC_FILENAME = IMG_PATH + IMG_SRC_NAME + IMG_EXT,
                  IMG_TRG_FILENAME = IMG_PATH + IMG_TRG_NAME + IMG_EXT;
@@ -52,33 +73,20 @@ int main(void) {
         trg = imread(IMG_TRG_FILENAME),
         output = colorTransfer(src, trg);
 
-    Mat src_lab = RGB_2_CIELAB(src),
+    Mat srcLab = RGB_2_CIELAB(src),
         trg_lab = RGB_2_CIELAB(trg);
-    
-    Mat src_rgb = CIELAB_2_RGB(src_lab);
 
-    float min_l = src_lab.at<Vec3f>(0, 0)[0],
-          min_a = src_lab.at<Vec3f>(0, 0)[1],
-          min_b = src_lab.at<Vec3f>(0, 0)[2],
-          max_l = src_lab.at<Vec3f>(0, 0)[0],
-          max_a = src_lab.at<Vec3f>(0, 0)[1],
-          max_b = src_lab.at<Vec3f>(0, 0)[2];
-    
-    for(int i = 0; i < src_lab.rows; i++) {
-        Vec3f *row = src_lab.ptr<Vec3f>(i);
-        for(int j = 0; j < src_lab.cols; j++) {
-            if(row[j][0] <= min_l) min_l = row[j][0];
-            if(row[j][1] <= min_a) min_a = row[j][1];
-            if(row[j][2] <= min_b) min_b = row[j][2];
+    vector<Mat> srcLabChannels;
+    split(srcLab, srcLabChannels);
 
-            if(row[j][0] >= max_l) max_l = row[j][0];
-            if(row[j][1] >= max_a) max_a = row[j][1];
-            if(row[j][2] >= max_b) max_b = row[j][2];
-        }
-    }
+    cout << srcLabChannels[0].type() << endl;
 
-    imshow(IMG_SRC_NAME, src);
-    imshow(IMG_SRC_NAME + " converted", src_rgb);
+    float min_l, min_a, min_b,
+          max_l, max_a, max_b;
+
+    channelMinMax(srcLabChannels[0], min_l, max_l);
+    channelMinMax(srcLabChannels[1], min_a, max_a);
+    channelMinMax(srcLabChannels[2], min_b, max_b);
 
     cout << "From source, the values:\n"
          << "\tL channel:\n"
