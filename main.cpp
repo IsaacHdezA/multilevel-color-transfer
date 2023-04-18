@@ -12,6 +12,7 @@ using namespace cv;
 
 #include "utils.hpp"
 
+// Color space transformation
 inline float CIELAB_f(float t) {
     const float SIGMA = 6.0/29.0;
 
@@ -24,107 +25,12 @@ inline float CIELAB_f(float t) {
     //        ((1.0/3.0) * (powf(1.0/SIGMA, 2) * t)) + (4.0 / 29.0);
 }
 
-inline int randInt(int min, int max = 0) { return (rand() % (max - min)) + min; }
-
 Mat RGB_2_CIEXYZ(const Mat &);
 Mat XYZ_2_CIELAB(const Mat &);
 Mat CIELAB_2_XYZ(const Mat &);
 Mat CIEXYZ_2_RGB(const Mat &);
-
-// K-means
-class MyPoint {
-    friend ostream &operator<< (ostream &, const MyPoint &);
-    public:
-        MyPoint(float = 0, float = 0, float = 10);
-
-        // Functions
-        void draw(Mat &, float, float, float, float = 2) const;
-        float distance(const MyPoint &) const;
-
-        // Members
-        float x;
-        float y;
-        float r;
-};
-
-ostream &operator<<(ostream &output, const MyPoint &right) {
-    output << "(" << right.x << ", " << right.y << ")";
-
-    return output;
-}
-
-MyPoint::MyPoint(float x, float y, float r) {
-    this->x = x;
-    this->y = y;
-    this->r = r;
-}
-
-// ! Mat &canvas should be HSL
-void MyPoint::draw(Mat &canvas, float hue, float sat, float val, float thick) const {
-    circle(
-        canvas,
-        Point(this->x, this->y),
-        this->r,
-        Vec3f(hue, sat, val),
-        -1
-    );
-    circle(
-        canvas,
-        Point(this->x, this->y),
-        this->r,
-        Vec3f(hue, sat, val/2),
-        thick
-    );
-}
-
-float MyPoint::distance(const MyPoint &p) const {
-    return sqrt(powf((p.x - this->x), 2) + powf((p.y - this->y), 2));
-}
-
-int minIdx(const float *data, int size) {
-    float min = data[0];
-    int id = 0;
-
-    for(int i = 0; i < size; i++)
-        if(data[i] < min) {
-            min = data[i];
-            id = i;
-        }
-
-    return id;
-}
-
-void findClosestCentroids(const MyPoint *data, const MyPoint *centroids, int *memberships, int data_size, int centroids_size) {
-    float *distances = new float[centroids_size];
-
-    for(int i = 0; i < data_size; i++) {
-        for(int j = 0; j < centroids_size; j++)
-            distances[j] = data[i].distance(centroids[j]);
-
-        memberships[i] = minIdx(distances, centroids_size);
-    }
-
-    delete [] distances;
-}
-
-void computeCentroids(const MyPoint *data, MyPoint *centroids, const int *memberships, int data_size, int centroids_size) {
-    for(int i = 0; i < centroids_size; i++) {
-        int sumX = 0,
-            sumY = 0,
-            count = 0;
-        for(int j = 0; j < data_size; j++) {
-            if(memberships[j] == i) {
-                sumX += data[j].x;
-                sumY += data[j].y;
-                count++;
-            }
-        }
-
-        if(count <= 0) continue;
-        centroids[i].x = sumX / count;
-        centroids[i].y = sumY / count;
-    }
-}
+Mat RGB_2_CIELAB(const Mat &);
+Mat CIELAB_2_RGB(const Mat &);
 
 int main(void) {
     srand(time(0));
@@ -140,92 +46,14 @@ int main(void) {
         trg = imread(IMG_TRG_FILENAME),
         output = colorTransfer(src, trg);
 
-    Mat rgb_ciexyz = RGB_2_CIEXYZ(src);
-    cout << "RGB_2_CIEXYZ:" << '\n'
-         << "\t-> Original RGB pixel: " <<        src.at<Vec3b>(0, 0) << '\n'
-         << "\t-> Pixel in XYZ space: " << rgb_ciexyz.at<Vec3f>(0, 0) << endl;
+    Mat src_lab = RGB_2_CIELAB(src),
+        trg_lab = RGB_2_CIELAB(trg);
+    
+    imshow("Original Source", src);
+    imshow("Original Target", trg);
 
-    Mat ciexyz_cielab = XYZ_2_CIELAB(rgb_ciexyz);
-    cout << "XYZ_2_CIELAB:" << '\n'
-         << "\t-> Original XYZ pixel: " <<    rgb_ciexyz.at<Vec3f>(0, 0) << '\n'
-         << "\t-> Pixel in LAB space: " << ciexyz_cielab.at<Vec3f>(0, 0) << endl;
-
-    Mat cielab_ciexyz = CIELAB_2_XYZ(ciexyz_cielab);
-    cout << "CIELAB_2_XYZ:" << '\n'
-         << "\t-> Original LAB pixel: "      << ciexyz_cielab.at<Vec3f>(0, 0) << '\n'
-         << "\t-> Pixel back in XYZ space: " << cielab_ciexyz.at<Vec3f>(0, 0) << endl;
-
-    Mat ciexyz_rgb = CIEXYZ_2_RGB(cielab_ciexyz);
-    cout << "CIEXYZ_2_RGB:" << '\n'
-         << "\t-> Original XYZ pixel: "      << cielab_ciexyz.at<Vec3f>(0, 0) << '\n'
-         << "\t-> Pixel back in RGB space: " <<    ciexyz_rgb.at<Vec3b>(0, 0) << endl;
-
-    // imshow("Original", src);
-    // imshow("Conversion", ciexyz_rgb);
-
-    // K-means help
-    const int CLUSTERS = 10,
-              TOTAL_POINTS = 100000,
-              P_RADIUS = 2;
-
-    MyPoint points[TOTAL_POINTS],
-            centroids[CLUSTERS];
-
-    int memberships[TOTAL_POINTS],
-        cluster_colors[CLUSTERS];
-
-    Mat kMeansCanvas(800, 1200, CV_32FC3, Vec3f(255, 255, 255));
-
-    // Setup
-    // Initializing points
-    for(int i = 0; i < TOTAL_POINTS; i++) {
-        points[i] = MyPoint(
-            randInt(P_RADIUS, kMeansCanvas.cols - P_RADIUS),
-            randInt(P_RADIUS, kMeansCanvas.rows - P_RADIUS),
-            P_RADIUS
-        );
-
-        memberships[i] = randInt(0, CLUSTERS);
-    }
-
-    // Initializing centroids and their colors
-    int colors = 0;
-    for(int i = 0; i < CLUSTERS; i++) {
-        int color = randInt(0, 360);
-        for(int j = 0; j < colors; j++)
-            if(color == cluster_colors[i]) color = randInt(0, 360);
-
-        cluster_colors[i] = color;
-        colors++;
-
-        int randId = randInt(0, TOTAL_POINTS);
-        centroids[i] = MyPoint(
-            points[randId].x,
-            points[randId].y,
-            P_RADIUS * 2
-        );
-    }
-
-    // Drawing points and centroids
-    const int ITER = 80;
-    for(int i = 0; i < ITER; i++) {
-        kMeansCanvas = Mat(kMeansCanvas.rows, kMeansCanvas.cols, CV_32FC3, Vec3f(255, 255, 255));
-
-        cvtColor(kMeansCanvas, kMeansCanvas, COLOR_BGR2HSV_FULL);
-        for(int i = 0; i < TOTAL_POINTS; i++)
-            points[i].draw(kMeansCanvas, cluster_colors[memberships[i]], 1.0, 1.0, 1);
-
-        for(int i = 0; i < CLUSTERS; i++)
-            centroids[i].draw(kMeansCanvas, cluster_colors[i], 1.0, 0.5, 1);
-        cvtColor(kMeansCanvas, kMeansCanvas, COLOR_HSV2BGR_FULL);
-        imshow("Points", kMeansCanvas);
-
-        findClosestCentroids(points, centroids, memberships, TOTAL_POINTS, CLUSTERS);
-        computeCentroids(points, centroids, memberships, TOTAL_POINTS, CLUSTERS);
-
-        if(waitKey(30) >= 0) break;
-    }
-    cout << "Finished" << endl;
+    Mat src_rgb = CIELAB_2_RGB(src_lab),
+        trg_rgb = CIELAB_2_RGB(trg_lab);
 
     waitKey();
 }
@@ -360,5 +188,13 @@ Mat CIEXYZ_2_RGB(const Mat &src) {
     output.convertTo(output, CV_8UC3);
 
     return output;
+}
+
+Mat RGB_2_CIELAB(const Mat &src) {
+    return XYZ_2_CIELAB(RGB_2_CIEXYZ(src));
+}
+
+Mat CIELAB_2_RGB(const Mat &src) {
+    return CIEXYZ_2_RGB(CIELAB_2_XYZ(src));
 }
 
