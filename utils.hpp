@@ -13,6 +13,7 @@ using cv::Mat_;
 using cv::Vec3f;
 using cv::Vec3b;
 
+// Utils
 inline float fast_inv_sqrt(float n) {
     const float threehalfs = 1.5F;
     float y = n;
@@ -27,16 +28,63 @@ inline float fast_inv_sqrt(float n) {
     return y;
 }
 
-// Function prototypes
-Mat   RGB_2_XYZ(const Mat &);
-Mat   XYZ_2_LMS(const Mat &);
-Mat   RGB_2_LMS(const Mat &);
-Mat LMS_2_LAlBe(const Mat &);
-Mat LAlBe_2_LMS(const Mat &);
-Mat   LMS_2_RGB(const Mat &);
+inline int randInt(int min, int max) { return (rand() % (max - min)) + min; }
+float distance(const Scalar &, const Scalar &);
+
+template<class T>
+void channelMinMax(const Mat &src, T &min, T &max) {
+    if(!src.data) {
+        cout << "channelMinMax: ! Image is empty. Please enter a valid image." << endl;
+        return;
+    }
+
+    // Assuming src is of type CV_32FC1
+    min = src.at<float>(0, 0);
+    max = min;
+
+    for(int i = 0; i < src.rows; i++) {
+        float *row = (float *) src.ptr<float>(i);
+        for(int j = 0; j < src.cols; j++) {
+            if(row[j] <= min) min = row[j];
+            if(row[j] >= max) max = row[j];
+        }
+    }
+}
+
+// Color Space Tranformations
+inline float CIELAB_f(float t) {
+    const float SIGMA = 6.0/29.0,
+                CTE = 4.0/29.0;
+
+    return (t > (powf(SIGMA, 3))) ?
+           cbrtf(t) :
+           (t / (3 * powf(SIGMA, 2))) + CTE;
+}
+
+inline float CIELAB_f_1(float t) {
+    const float SIGMA = 6.0/29.0,
+                CTE = 4.0/29.0;
+
+    return (t > SIGMA) ?
+           powf(t, 3) :
+           ((3 * powf(SIGMA, 2)) * (t - CTE));
+}
+
+Mat    RGB_2_XYZ(const Mat &);
+Mat    XYZ_2_LMS(const Mat &);
+Mat    RGB_2_LMS(const Mat &);
+Mat  LMS_2_LAlBe(const Mat &);
+Mat  LAlBe_2_LMS(const Mat &);
+Mat    LMS_2_RGB(const Mat &);
+Mat RGB_2_CIEXYZ(const Mat &);
+Mat XYZ_2_CIELAB(const Mat &);
+Mat CIELAB_2_XYZ(const Mat &);
+Mat CIEXYZ_2_RGB(const Mat &);
 
 Mat RGB_2_LAlBe(const Mat &);
 Mat LAlBe_2_RGB(const Mat &);
+Mat RGB_2_CIELAB(const Mat &);
+Mat CIELAB_2_RGB(const Mat &);
 
 Mat colorTransfer(const Mat &, const Mat &);
 
@@ -44,6 +92,17 @@ vector<float> channelMeans(const Mat &);
 vector<float>   channelStd(const Mat &, const vector<float> &);
 
 // Function definitions
+// Utils
+float distance(const Scalar &p1, const Scalar &p2) {
+    float sum = 0;
+    for(int i = 0; i < p1.channels; i++) {
+        sum += (p2(i) - p1(i)) * (p2(i) - p1(i));
+    }
+
+    return sqrt(sum);
+}
+
+// Color Space Transformations
 Mat RGB_2_XYZ(const Mat &src) {
     Mat output = Mat::zeros(1, 1, CV_32FC3);
 
@@ -241,6 +300,136 @@ Mat RGB_2_LAlBe(const Mat &src) {
 
 Mat LAlBe_2_RGB(const Mat &src) {
     return (LMS_2_RGB(LAlBe_2_LMS(src)));
+}
+
+Mat RGB_2_CIEXYZ(const Mat &src) {
+    Mat output = Mat::zeros(1, 1, CV_32FC3);
+
+    if(!src.data || src.channels() == 1) {
+        cout << "\n\t! RGB_2_CIEXYZ: Image is empty orh monochromatic. Should be three channels (BGR)." << endl;
+        return output;
+    }
+
+    const Mat M_CONV = (Mat_<float>(3, 3) <<
+        0.4124564f, 0.3575761f, 0.1804375f,
+        0.2126729f, 0.7151522f, 0.0721750f,
+        0.0193339f, 0.1191920f, 0.9503041f
+    );
+
+    Mat srcFloat;
+    src.convertTo(srcFloat, CV_32FC3, 1.0 / 255.0, 0);
+    output = Mat::zeros(src.rows, src.cols, CV_32FC3);
+
+    for(int i = 0; i < srcFloat.rows; i++) {
+        Vec3f *row = (Vec3f *) srcFloat.ptr<Vec3f>(i),
+              *out = (Vec3f *)  output.ptr<Vec3f>(i);
+        for(int j = 0; j < srcFloat.cols; j++)
+            gemm(M_CONV, row[j], 1.0, Mat(), 0.0, out[j]);
+    }
+
+    return output;
+}
+
+Mat CIEXYZ_2_CIELAB(const Mat &src) {
+    Mat output = Mat::zeros(1, 1, CV_32FC3);
+
+    if(!src.data || src.channels() == 1) {
+        cout << "\n\t! CIEXYZ_2_CIELAB: Image is empty or monochromatic. Should be three channels (BGR)." << endl;
+        return output;
+    }
+
+    output = Mat::zeros(src.rows, src.cols, CV_32FC3);
+
+    // Tristimulus values from Illuminant D65 2°
+    const float X_n = 0.950489,
+                Y_n = 1.000000,
+                Z_n = 1.088840;
+
+    for(int i = 0; i < src.rows; i++) {
+        Vec3f *row = (Vec3f *) src.ptr<Vec3f>(i),
+              *out = (Vec3f *)  output.ptr<Vec3f>(i);
+        for(int j = 0; j < src.cols; j++) {
+            out[j][0] = 116 *  CIELAB_f((row[j][1]) / Y_n) - 16;
+            out[j][1] = 500 * (CIELAB_f((row[j][0]) / X_n) - CIELAB_f(row[j][1] / Y_n));
+            out[j][2] = 200 * (CIELAB_f((row[j][1]) / Y_n) - CIELAB_f(row[j][2] / Z_n));
+        }
+    }
+
+    return output;
+}
+
+Mat CIELAB_2_CIEXYZ(const Mat &src) {
+    Mat output = Mat::zeros(1, 1, CV_32FC3);
+
+    if(!src.data || src.channels() == 1) {
+        cout << "\n\t! CIELAB_2_CIEXYZ: Image is empty or monochromatic. Should be three channels (BGR)." << endl;
+        return output;
+    }
+
+    output = Mat::zeros(src.rows, src.cols, CV_32FC3);
+
+    float f_y = 0,
+          f_x = 0,
+          f_z = 0;
+
+    // Tristimulus values from Illuminant D65 2°
+    const float X_n = 0.950489,
+                Y_n = 1.000000,
+                Z_n = 1.088840;
+
+    for(int i = 0; i < src.rows; i++) {
+        Vec3f *row = (Vec3f *)    src.ptr<Vec3f>(i),
+              *out = (Vec3f *) output.ptr<Vec3f>(i);
+        for(int j = 0; j < src.cols; j++) {
+            f_x = CIELAB_f_1((row[j][0] + 16.0)/116.0 + (row[j][1]/500.0));
+            f_y = CIELAB_f_1((row[j][0] + 16.0)/116.0);
+            f_z = CIELAB_f_1((row[j][0] + 16.0)/116.0 - (row[j][2]/200.0));
+
+            out[j][0] = X_n * f_x;
+            out[j][1] = Y_n * f_y;
+            out[j][2] = Z_n * f_z;
+        }
+    }
+
+    return output;
+}
+
+Mat CIEXYZ_2_RGB(const Mat &src) {
+    Mat output = Mat::zeros(1, 1, CV_32FC3);
+
+    if(!src.data || src.channels() == 1) {
+        cout << "\n\t! CIEXYZ_2_RGB: Image is empty or monochromatic. Should be three channels (BGR)." << endl;
+        return output;
+    }
+
+    const Mat M_CONV = (Mat_<float>(3, 3) <<
+         3.2404542f, -1.5371385f, -0.4985314f,
+        -0.9692660f,  1.8760108f,  0.0415560f,
+         0.0556434f, -0.2040259f,  1.0572252f
+    );
+
+    output = Mat::zeros(src.rows, src.cols, CV_32FC3);
+
+    for(int i = 0; i < src.rows; i++) {
+        Vec3f *row = (Vec3f *) src.ptr<Vec3f>(i),
+              *out = (Vec3f *)  output.ptr<Vec3f>(i);
+        for(int j = 0; j < src.cols; j++)
+            gemm(M_CONV, row[j], 1.0, Mat(), 0.0, out[j]);
+    }
+
+    // Convert back again to a range between 0-255 and uchar
+    normalize(output, output, 0, 255, NORM_MINMAX);
+    output.convertTo(output, CV_8UC3);
+
+    return output;
+}
+
+Mat RGB_2_CIELAB(const Mat &src) {
+    return CIEXYZ_2_CIELAB(RGB_2_CIEXYZ(src));
+}
+
+Mat CIELAB_2_RGB(const Mat &src) {
+    return CIEXYZ_2_RGB(CIELAB_2_CIEXYZ(src));
 }
 
 Mat colorTransfer(const Mat &src, const Mat &trg) {
