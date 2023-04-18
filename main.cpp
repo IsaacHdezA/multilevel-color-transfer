@@ -41,6 +41,8 @@ Mat CIELAB_2_RGB(const Mat &);
 
 // Utils
 inline int randInt(int min, int max) { return (rand() % (max - min)) + min; }
+float distance(const Scalar &, const Scalar &);
+
 template<class T>
 void channelMinMax(const Mat &src, T &min, T &max) {
     if(!src.data) {
@@ -61,6 +63,10 @@ void channelMinMax(const Mat &src, T &min, T &max) {
     }
 }
 
+vector<Mat> getHists(const Mat &, int, int, int);
+vector<Mat> getCumHists(const vector<Mat> &);
+vector<Mat> getCumHists(const Mat &, int, int, int);
+
 Mat showHist(const vector<Mat> &);
 
 int main(void) {
@@ -68,7 +74,7 @@ int main(void) {
 
     const string IMG_PATH = "./res/",
                  IMG_EXT = ".jpg",
-                 IMG_SRC_NAME = "test2",
+                 IMG_SRC_NAME = "test3",
                  IMG_TRG_NAME = "test7",
                  IMG_SRC_FILENAME = IMG_PATH + IMG_SRC_NAME + IMG_EXT,
                  IMG_TRG_FILENAME = IMG_PATH + IMG_TRG_NAME + IMG_EXT;
@@ -80,59 +86,79 @@ int main(void) {
     Mat srcLab = RGB_2_CIELAB(src),
         trg_lab = RGB_2_CIELAB(trg);
 
-    vector<Mat> srcLabChannels;
-    split(srcLab, srcLabChannels);
+    imshow("Src image", src);
 
-    cout << srcLabChannels[0].type() << endl;
+    vector<Mat> rgbHists = getHists(src, 256, 0, 255);
+    Mat rgbHistContainer = showHist(rgbHists);
+    imshow("RGB Hist", rgbHistContainer);
 
-    float min_l, min_a, min_b,
-          max_l, max_a, max_b;
+    vector<Mat> rgbCumHists = getCumHists(rgbHists);
+    Mat rgbCumHistContainer = showHist(rgbCumHists);
+    imshow("RGB Cum Hist", rgbCumHistContainer);
 
-    channelMinMax(srcLabChannels[0], min_l, max_l);
-    channelMinMax(srcLabChannels[1], min_a, max_a);
-    channelMinMax(srcLabChannels[2], min_b, max_b);
+    vector<Mat> labHists = getHists(srcLab, 256, -127, 128);
+    Mat histContainer = showHist(labHists);
+    imshow("CIELAB Hist", histContainer);
 
-    cout << "From source, the values:\n"
-         << "\tL channel:\n"
-         << "\t\t- Min (L channel): " << min_l << '\n'
-         << "\t\t- Max (L channel): " << max_l << '\n'
-         << "\ta channel:\n"
-         << "\t\t- Min (a channel): " << min_a << '\n'
-         << "\t\t- Max (a channel): " << max_a << '\n'
-         << "\tb channel:\n"
-         << "\t\t- Min (b channel): " << min_b << '\n'
-         << "\t\t- Max (b channel): " << max_b << endl;
+    vector<Mat> cumHists = getCumHists(labHists);
+    Mat histCumContainer = showHist(cumHists);
+    imshow("CIELAB Cum Hist", histCumContainer);
 
-    int histSize = 256;
-    float range[] = {-127, 128};
-    const float *histRange[] = {range};
+    // for(int i = 0; i < cumHists.size(); i++) {
+    //     normalize(cumHists[i], cumHists[i], 0, 1, NORM_MINMAX);
+    //     for(int j = 1; j < cumHists[i].rows; j++) {
 
-    vector<Mat> hists(srcLabChannels.size());
-
-    calcHist(&srcLabChannels[0], 1, 0, Mat(), hists[0], 1, &histSize, histRange, true, false);
-    calcHist(&srcLabChannels[1], 1, 0, Mat(), hists[1], 1, &histSize, histRange, true, false);
-    calcHist(&srcLabChannels[2], 1, 0, Mat(), hists[2], 1, &histSize, histRange, true, false);
-
-    Mat histContainer = showHist(hists);
-    imshow("Hist", histContainer);
-
-    // Calculating cumulative hist
-    vector<Mat> cum_hists(hists.size());
-    for(int i = 0; i < hists.size(); i++)
-        cum_hists[i] = hists[i].clone();
-
-    for(int i = 0; i < cum_hists.size(); i++)
-        for(int j = 1; j < cum_hists[i].rows; j++)
-            cum_hists[i].at<float>(j) += cum_hists[i].at<float>(j - 1);
-    
-    Mat histCumContainer = showHist(cum_hists);
-    imshow("Cum Hist", histCumContainer);
-
-    // normalize(l_hist_cum, l_hist_cum, 0, 1, NORM_MINMAX);
-    // normalize(a_hist_cum, a_hist_cum, 0, 1, NORM_MINMAX);
-    // normalize(b_hist_cum, b_hist_cum, 0, 1, NORM_MINMAX);
+    //     }
+    // }
 
     waitKey();
+}
+
+float distance(const Scalar &p1, const Scalar &p2) {
+    float sum = 0;
+    for(int i = 0; i < p1.channels; i++) {
+        sum += (p2(i) - p1(i)) * (p2(i) - p1(i));
+    }
+
+    return sqrt(sum);
+}
+
+vector<Mat> getHists(const Mat &src, int hSize, int minR, int maxR) {
+    vector<Mat> srcChannels;
+    split(src, srcChannels);
+
+    int histSize = hSize;
+    float range[] = {minR, maxR};
+    const float *histRange[] = {range};
+
+    vector<Mat> hists(src.channels());
+    for(int i = 0; i < src.channels(); i++)
+        calcHist(&srcChannels[i], 1, 0, Mat(), hists[i], 1, &histSize, histRange, true, false);
+
+    return hists;
+}
+
+vector<Mat> getCumHists(const vector<Mat> &hists) {
+    // Calculating cumulative hist
+    vector<Mat> cumHists(hists.size());
+    for(int i = 0; i < hists.size(); i++)
+        cumHists[i] = hists[i].clone();
+
+    for(int i = 0; i < cumHists.size(); i++)
+        for(int j = 1; j < cumHists[i].rows; j++)
+            cumHists[i].at<float>(j) += cumHists[i].at<float>(j - 1);
+
+    return cumHists;
+}
+
+vector<Mat> getCumHists(const Mat &src, int hSize, int minR, int maxR) {
+    vector<Mat> cumHists = getHists(src, hSize, minR, maxR);
+
+    for(int i = 0; i < cumHists.size(); i++)
+        for(int j = 1; j < cumHists[i].rows; j++)
+            cumHists[i].at<float>(j) += cumHists[i].at<float>(j - 1);
+    
+    return cumHists;
 }
 
 Mat showHist(const vector<Mat> &hists) {
@@ -158,11 +184,11 @@ Mat showHist(const vector<Mat> &hists) {
     Size textSize = getTextSize("Channel 1", fontFace, fontScaleText, thicknessText, 0);
 
     for(int i = 0; i < histsCopies.size(); i++) {
-        Scalar histColor(
-            randInt(0, 255),
-            randInt(0, 255),
-            randInt(0, 255)
-        );
+        int b = randInt(0, 255),
+            g = randInt(0, 255),
+            r = randInt(0, 255);
+
+        Scalar histColor(b, g, r);
 
         line(
             histImage,
