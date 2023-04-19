@@ -24,7 +24,7 @@ int main(void) {
 
     const string IMG_PATH = "./res/",
                  IMG_EXT = ".jpg",
-                 IMG_SRC_NAME = "test6",
+                 IMG_SRC_NAME = "test1",
                  IMG_TRG_NAME = "test7",
                  IMG_SRC_FILENAME = IMG_PATH + IMG_SRC_NAME + IMG_EXT,
                  IMG_TRG_FILENAME = IMG_PATH + IMG_TRG_NAME + IMG_EXT;
@@ -40,8 +40,6 @@ int main(void) {
 
     // RGB histograms
     vector<Mat> rgbHists = getHists(src, 256, 0, 255);
-    rgbHists.erase(rgbHists.begin());
-
     Mat rgbHistContainer = showHist(rgbHists);
     imshow("RGB Hist", rgbHistContainer);
 
@@ -67,24 +65,37 @@ int main(void) {
     const float STEP = 1.0 / SEGMENTS;
     vector<vector<float>> thresholds(cumHists.size());
 
-    cout << "Segments: " << SEGMENTS << '\n'
+    cout << "Image size: " << src.size() << '\n'
+         << "Segments: " << SEGMENTS << '\n'
          << "Thresholds: " << THRESHOLDS << '\n'
          << "Step: " << STEP << '\n'
-         << "CumHists size: " << cumHists.size() << endl;
+         << "CumHists size: " << cumHists.size() << endl << endl;
 
+    vector<Mat> labChannels;
+    split(srcLab, labChannels);
+    labChannels.erase(labChannels.begin());
     // Computing thresholds according to the Segments
     for(int i = 0; i < cumHists.size(); i++) {
+        float min = 0, max = 0;
+        channelMinMax(labChannels[i], min, max);
+
         normalize(cumHists[i], cumHists[i], 0, 1, NORM_MINMAX);
+        cout << "Channel " <<   i << ":\n"
+             << "\tMin: "  << min << '\n'
+             << "\tMax: "  << max << '\n';
         for(int j = 0; j < THRESHOLDS; j++) {
             int thresh = 0;
             for(int k = 0; k < cumHists[i].rows; k++)
                 if(cumHists[i].at<float>(k) <= (STEP * (j + 1)))
                     thresh = k;
-                cout << cumHists[i].at<float>(thresh) << endl;
+            cout << "\tThreshold at " << thresh << "(" << mapNum(thresh, 0, 255, -127, 128) << "): " << cumHists[i].at<float>(thresh) << endl;
+            // thresholds[i].push_back(mapNum(thresh, 0, 255, 0, 1));
+            // thresholds[i].push_back(mapNum(thresh, 0, 255, min, max));
             thresholds[i].push_back(mapNum(thresh, 0, 255, -127, 128));
             // thresholds[i].push_back(thresh);
             // thresholds[i].push_back(cumHists[i].at<float>(thresh));
         }
+        cout << endl;
     }
 
     // Printing thresholds
@@ -105,6 +116,7 @@ int main(void) {
     for(int i = 0; i < cumHists.size(); i++) {
         segments.clear();
 
+        cout << "From channel " << i << "\n\tThe segment 0 goes from -127 to " << thresholds[i][0] << endl;
         // Creating image for segment 0
         Mat temp = Mat::zeros(srcLab.rows, srcLab.cols, CV_32FC3);
         for(int j = 0; j < temp.rows; j++) {
@@ -112,20 +124,26 @@ int main(void) {
                   *out = (Vec3f *)   temp.ptr<Vec3f>(j);
 
             for(int k = 0; k < temp.cols; k++)
-                if(row[k][i] >= -127 && row[k][i] < thresholds[i][0])
+                // if(row[k][i] >= -127 && row[k][i] < thresholds[i][0]) {
+                if(row[k][i + 1] >= -127 && row[k][i + 1] < thresholds[i][0]) {
+                    // cout << "\tPoint " << row[k][i + 1] << " is in range" << endl;
                     out[k] = row[k];
+                }
+                // if(row[k][i] >= 0 && row[k][i] < thresholds[i][0])
         }
         segments.push_back(temp.clone());
 
         // Creating image for segments 1-(SEGMENTS - 1)
-        for(int j = 1; j < SEGMENTS - 1; j++) {
+        for(int j = 1; j < THRESHOLDS; j++) {
             temp = Mat::zeros(src.rows, src.cols, CV_32FC3);
+            cout << "\tThe segment " << j << " goes from " << thresholds[i][j - 1] << " to " << thresholds[i][j] << endl;
             for(int k = 0; k < temp.rows; k++) {
                 Vec3f *row = (Vec3f *) srcLab.ptr<Vec3f>(k),
                       *out = (Vec3f *)   temp.ptr<Vec3f>(k);
 
                 for(int l = 0; l < temp.cols; l++) {
-                    if(row[l][i] >= thresholds[i][j - 1] && row[l][i] < thresholds[i][j])
+                    // if(row[l][i]     >= thresholds[i][j - 1] && row[l][i] < thresholds[i][j])
+                    if(row[l][i + 1] >= thresholds[i][j - 1] && row[l][i + 1] < thresholds[i][j])
                         out[l] = row[l];
                 }
 
@@ -135,14 +153,18 @@ int main(void) {
 
         // Creating image for the last segment
         temp = Mat::zeros(src.rows, src.cols, CV_32FC3);
+        cout << "\tThe segment " << THRESHOLDS << " goes from " << thresholds[i][THRESHOLDS - 1] << " to " << 128 << endl;
         for(int j = 0; j < temp.rows; j++) {
             Vec3f *row = (Vec3f *) srcLab.ptr<Vec3f>(j),
                   *out = (Vec3f *)   temp.ptr<Vec3f>(j);
 
             for(int k = 0; k < temp.cols; k++)
-                if(row[k][i] >= thresholds[i][THRESHOLDS] && row[k][i] < 128)
+                // if(row[k][i] >= thresholds[i][THRESHOLDS] && row[k][i] < 1.0)
+                // if(row[k][i] >= thresholds[i][THRESHOLDS] && row[k][i] < 128)
+                if(row[k][i + 1] >= thresholds[i][THRESHOLDS - 1] && row[k][i + 1] < 128)
                     out[k] = row[k];
         }
+
         segments.push_back(temp.clone());
         segmentedImages.push_back(segments);
     }
@@ -159,7 +181,6 @@ int main(void) {
     // Rejoining image segments into one image
     vector<Mat> rejoined;
     for(int i = 0; i < segmentedImages.size(); i++) {
-        cout << "Creating new image" << endl;
         Mat temp = Mat::zeros(src.rows, src.cols, CV_32FC3);
         for(int j = 0; j < segmentedImages[i].size(); j++) {
 

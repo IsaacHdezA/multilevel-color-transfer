@@ -39,17 +39,33 @@ void channelMinMax(const Mat &src, T &min, T &max) {
         return;
     }
 
-    // Assuming src is of type CV_32FC1
-    min = src.at<float>(0, 0);
-    max = min;
+    switch(src.type()) {
+        case CV_32FC1:
+            min = src.at<float>(0, 0);
+            max = min;
 
-    for(int i = 0; i < src.rows; i++) {
-        float *row = (float *) src.ptr<float>(i);
-        for(int j = 0; j < src.cols; j++) {
-            if(row[j] <= min) min = row[j];
-            if(row[j] >= max) max = row[j];
-        }
+            for(int i = 0; i < src.rows; i++) {
+                float *row = (float *) src.ptr<float>(i);
+                for(int j = 0; j < src.cols; j++) {
+                    if(row[j] <= min) min = row[j];
+                    if(row[j] >= max) max = row[j];
+                }
+            }
+        break;
+        case CV_8UC1:
+            min = src.at<uchar>(0, 0);
+            max = min;
+
+            for(int i = 0; i < src.rows; i++) {
+                uchar *row = (uchar *) src.ptr<uchar>(i);
+                for(int j = 0; j < src.cols; j++) {
+                    if(row[j] <= min) min = row[j];
+                    if(row[j] >= max) max = row[j];
+                }
+            }
+        break;
     }
+    // Assuming src is of type CV_32FC1
 }
 
 // Color Space Tranformations
