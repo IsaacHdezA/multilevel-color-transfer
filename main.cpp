@@ -24,7 +24,7 @@ int main(void) {
 
     const string IMG_PATH = "./res/",
                  IMG_EXT = ".jpg",
-                 IMG_SRC_NAME = "test1",
+                 IMG_SRC_NAME = "test8",
                  IMG_TRG_NAME = "test7",
                  IMG_SRC_FILENAME = IMG_PATH + IMG_SRC_NAME + IMG_EXT,
                  IMG_TRG_FILENAME = IMG_PATH + IMG_TRG_NAME + IMG_EXT;
@@ -74,6 +74,7 @@ int main(void) {
     vector<Mat> labChannels;
     split(srcLab, labChannels);
     labChannels.erase(labChannels.begin());
+
     // Computing thresholds according to the Segments
     for(int i = 0; i < cumHists.size(); i++) {
         float min = 0, max = 0;
@@ -89,11 +90,7 @@ int main(void) {
                 if(cumHists[i].at<float>(k) <= (STEP * (j + 1)))
                     thresh = k;
             cout << "\tThreshold at " << thresh << "(" << mapNum(thresh, 0, 255, -127, 128) << "): " << cumHists[i].at<float>(thresh) << endl;
-            // thresholds[i].push_back(mapNum(thresh, 0, 255, 0, 1));
-            // thresholds[i].push_back(mapNum(thresh, 0, 255, min, max));
             thresholds[i].push_back(mapNum(thresh, 0, 255, -127, 128));
-            // thresholds[i].push_back(thresh);
-            // thresholds[i].push_back(cumHists[i].at<float>(thresh));
         }
         cout << endl;
     }
@@ -124,12 +121,8 @@ int main(void) {
                   *out = (Vec3f *)   temp.ptr<Vec3f>(j);
 
             for(int k = 0; k < temp.cols; k++)
-                // if(row[k][i] >= -127 && row[k][i] < thresholds[i][0]) {
-                if(row[k][i + 1] >= -127 && row[k][i + 1] < thresholds[i][0]) {
-                    // cout << "\tPoint " << row[k][i + 1] << " is in range" << endl;
+                if(row[k][i + 1] >= -127 && row[k][i + 1] < thresholds[i][0])
                     out[k] = row[k];
-                }
-                // if(row[k][i] >= 0 && row[k][i] < thresholds[i][0])
         }
         segments.push_back(temp.clone());
 
@@ -142,7 +135,6 @@ int main(void) {
                       *out = (Vec3f *)   temp.ptr<Vec3f>(k);
 
                 for(int l = 0; l < temp.cols; l++) {
-                    // if(row[l][i]     >= thresholds[i][j - 1] && row[l][i] < thresholds[i][j])
                     if(row[l][i + 1] >= thresholds[i][j - 1] && row[l][i + 1] < thresholds[i][j])
                         out[l] = row[l];
                 }
@@ -159,8 +151,6 @@ int main(void) {
                   *out = (Vec3f *)   temp.ptr<Vec3f>(j);
 
             for(int k = 0; k < temp.cols; k++)
-                // if(row[k][i] >= thresholds[i][THRESHOLDS] && row[k][i] < 1.0)
-                // if(row[k][i] >= thresholds[i][THRESHOLDS] && row[k][i] < 128)
                 if(row[k][i + 1] >= thresholds[i][THRESHOLDS - 1] && row[k][i + 1] < 128)
                     out[k] = row[k];
         }
@@ -192,7 +182,7 @@ int main(void) {
                         out[l] = row[l];
 
             }
-            imshow("Something", CIELAB_2_RGB(temp));
+            imshow("Reconstructing image from channel and its segments", CIELAB_2_RGB(temp));
             waitKey();
         }
         rejoined.push_back(CIELAB_2_RGB(temp));
