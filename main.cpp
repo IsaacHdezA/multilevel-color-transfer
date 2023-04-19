@@ -22,7 +22,7 @@ Mat showHist(const vector<Mat> &);
 vector<vector<float>> getThresholds(const vector<Mat> &cumHists, int SEGMENTS) {
     const int   THRESHOLDS = SEGMENTS - 1,
                 CHANNELS   = cumHists.size();
-    const float STEP       = 1.0 / SEGMENTS;
+    const float STEP       = 1.0 / SEGMENTS; // Gap between each threshold
 
     vector<vector<float>> thresholds(CHANNELS);
 
@@ -62,76 +62,13 @@ vector<vector<float>> getThresholds(const vector<Mat> &cumHists, int SEGMENTS) {
     return thresholds;
 }
 
-int main(void) {
-    srand(time(0));
-
-    const string IMG_PATH = "./res/",
-                 IMG_EXT = ".jpg",
-                 IMG_SRC_NAME = "test8",
-                 IMG_TRG_NAME = "test7",
-                 IMG_SRC_FILENAME = IMG_PATH + IMG_SRC_NAME + IMG_EXT,
-                 IMG_TRG_FILENAME = IMG_PATH + IMG_TRG_NAME + IMG_EXT;
-
-    Mat src = imread(IMG_SRC_FILENAME),
-        trg = imread(IMG_TRG_FILENAME),
-        output = colorTransfer(src, trg);
-
-    Mat srcLab  = RGB_2_CIELAB(src),
-        trg_lab = RGB_2_CIELAB(trg);
-
-    imshow("Src image", src);
-
-    // RGB histograms (normal and cumulative)
-    vector<Mat> rgbHists    = getHists(src, 256, 0, 255),
-                rgbCumHists = getCumHists(rgbHists);
-    Mat rgbHistContainer    = showHist(rgbHists),
-        rgbCumHistContainer = showHist(rgbCumHists);
-
-    imshow("RGB Hist", rgbHistContainer);
-    imshow("RGB Cum Hist", rgbCumHistContainer);
-
-    // LAB histograms (normal and cumulative)
-    vector<Mat> labHists = getHists(srcLab, 256, -127, 128),
-                cumHists;
-    labHists.erase(labHists.begin()); // We ignore the L* component for this application
-    cumHists = getCumHists(labHists);
-
-    Mat histContainer = showHist(labHists),
-        histCumContainer = showHist(cumHists);
-    imshow("CIELAB Hist", histContainer);
-    imshow("CIELAB Cum Hist", histCumContainer);
-
-    // Channel segmentations
-    const int   SEGMENTS   = 4,
-                THRESHOLDS = SEGMENTS - 1,
-                CHANNELS   = cumHists.size();
-    const float STEP       = 1.0 / SEGMENTS; // Gap between each threshold
-
-    // Just some information
-    cout << "Image size: "    << src.size()      << '\n'
-         << "Segments: "      << SEGMENTS        << '\n'
-         << "Thresholds: "    << THRESHOLDS      << '\n'
-         << "Step: "          << STEP            << '\n'
-         << "CumHists size: " << CHANNELS << endl << endl;
-
-    // Thresholds for each channel
-    vector<vector<float>> thresholds = getThresholds(cumHists, SEGMENTS);
-
-    // Printing thresholds
-    cout << "Thresholds: [";
-    for(int i = 0; i < thresholds.size(); i++) {
-        cout << "[";
-        for(int j = 0; j < thresholds[i].size(); j++) {
-            cout << (float) thresholds[i][j] << ((j + 1 == thresholds[i].size()) ? "" : ", ");
-        }
-        cout << "]" << ((i + 1) == thresholds.size() ? "" : ", ");
-    }
-    cout << "]" << endl;
-
-    // Masking image according to the segments
+vector<vector<Mat>> getSegments(const Mat &src, const Mat &srcLab, const vector<Mat> &cumHists, const vector<vector<float>> &thresholds, int SEGMENTS) {
     vector<vector<Mat>> segmentedImages;
     vector<Mat> segments;
 
+    const int   THRESHOLDS = SEGMENTS - 1,
+                CHANNELS   = cumHists.size();
+    
     for(int i = 0; i < CHANNELS; i++) {
         segments.clear();
 
@@ -181,16 +118,10 @@ int main(void) {
         segmentedImages.push_back(segments);
     }
 
-    // Showing image segments
-    for(int i = 0; i < segmentedImages.size(); i++) {
-        for(int j = 0; j < segmentedImages[i].size(); j++)
-            imshow(
-                "Channel " + to_string(i) + ", segment " + to_string(j),
-                CIELAB_2_RGB(segmentedImages[i][j]));
-        waitKey();
-    }
+    return segmentedImages;
+}
 
-    // Rejoining image segments into one image
+vector<Mat> constructImageFromSegments(const Mat &src, const vector<vector<Mat>> &segmentedImages) {
     vector<Mat> rejoined;
     for(int i = 0; i < segmentedImages.size(); i++) {
         Mat temp = Mat::zeros(src.rows, src.cols, CV_32FC3);
@@ -209,6 +140,91 @@ int main(void) {
         }
         rejoined.push_back(CIELAB_2_RGB(temp));
     }
+    return rejoined;
+}
+
+// Debugging functions
+void printThresholds(const vector<vector<float>> &thresholds) {
+    cout << "[";
+    for(int i = 0; i < thresholds.size(); i++) {
+        cout << "[";
+        for(int j = 0; j < thresholds[i].size(); j++) {
+            cout << (float) thresholds[i][j] << ((j + 1 == thresholds[i].size()) ? "" : ", ");
+        }
+        cout << "]" << ((i + 1) == thresholds.size() ? "" : ", ");
+    }
+    cout << "]" << endl;
+
+}
+
+void showSegments(const vector<vector<Mat>> &segmentedImages) {
+    for(int i = 0; i < segmentedImages.size(); i++) {
+        for(int j = 0; j < segmentedImages[i].size(); j++)
+            imshow(
+                "Channel " + to_string(i) + ", segment " + to_string(j),
+                CIELAB_2_RGB(segmentedImages[i][j]));
+    }
+}
+
+int main(void) {
+    srand(time(0));
+
+    const string IMG_PATH = "./res/",
+                 IMG_EXT = ".jpg",
+                 IMG_SRC_NAME = "test8",
+                 IMG_TRG_NAME = "test7",
+                 IMG_SRC_FILENAME = IMG_PATH + IMG_SRC_NAME + IMG_EXT,
+                 IMG_TRG_FILENAME = IMG_PATH + IMG_TRG_NAME + IMG_EXT;
+
+    Mat src = imread(IMG_SRC_FILENAME),
+        trg = imread(IMG_TRG_FILENAME),
+        output = colorTransfer(src, trg);
+
+    Mat srcLab  = RGB_2_CIELAB(src),
+        trg_lab = RGB_2_CIELAB(trg);
+
+    imshow("Src image", src);
+
+    // RGB histograms (normal and cumulative)
+    vector<Mat> rgbHists    = getHists(src, 256, 0, 255),
+                rgbCumHists = getCumHists(rgbHists);
+    Mat rgbHistContainer    = showHist(rgbHists),
+        rgbCumHistContainer = showHist(rgbCumHists);
+
+    imshow("RGB Hist", rgbHistContainer);
+    imshow("RGB Cum Hist", rgbCumHistContainer);
+
+    // LAB histograms (normal and cumulative)
+    vector<Mat> labHists = getHists(srcLab, 256, -127, 128),
+                cumHists;
+    labHists.erase(labHists.begin()); // We ignore the L* component for this application
+    cumHists = getCumHists(labHists);
+
+    Mat histContainer = showHist(labHists),
+        histCumContainer = showHist(cumHists);
+    imshow("CIELAB Hist", histContainer);
+    imshow("CIELAB Cum Hist", histCumContainer);
+
+    // Channel segmentations
+    const int   SEGMENTS   = 4,
+                THRESHOLDS = SEGMENTS - 1,
+                CHANNELS   = cumHists.size();
+
+    // Thresholds for each channel
+    vector<vector<float>> thresholds = getThresholds(cumHists, SEGMENTS);
+
+    // Printing thresholds
+    cout << "Thresholds: ";
+    printThresholds(thresholds);
+
+    // Masking image according to the segments
+    vector<vector<Mat>> segmentedImages = getSegments(src, srcLab, cumHists, thresholds, SEGMENTS);
+
+    // Showing image segments
+    showSegments(segmentedImages);
+
+    // Rejoining image segments into one image
+    vector<Mat> rejoined = constructImageFromSegments(src, segmentedImages);
 
     for(int i = 0; i < rejoined.size(); i++)
         imshow("Image from channel " + to_string(i), rejoined[i]);
