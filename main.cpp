@@ -19,6 +19,226 @@ vector<Mat> getCumHists(const Mat &, int, int, int);
 
 Mat showHist(const vector<Mat> &);
 
+vector<vector<float>> getThresholds(const vector<Mat> &, int);
+vector<vector<Mat>> getSegments(const Mat &, const Mat &, const vector<Mat> &, const vector<vector<float>> &, int);
+vector<Mat> constructImageFromSegments(const Mat &, const vector<vector<Mat>> &);
+
+// Debugging functions
+void printThresholds(const vector<vector<float>> &);
+void showSegments(const vector<vector<Mat>> &);
+
+int main(void) {
+    srand(time(0));
+
+    const string IMG_PATH = "./res/",
+                 IMG_EXT = ".jpg",
+                 IMG_SRC_NAME = "test8",
+                 IMG_TRG_NAME = "test7",
+                 IMG_SRC_FILENAME = IMG_PATH + IMG_SRC_NAME + IMG_EXT,
+                 IMG_TRG_FILENAME = IMG_PATH + IMG_TRG_NAME + IMG_EXT;
+
+    Mat src = imread(IMG_SRC_FILENAME),
+        trg = imread(IMG_TRG_FILENAME);
+
+    Mat srcLab  = RGB_2_CIELAB(src),
+        trgLab  = RGB_2_CIELAB(trg);
+
+    imshow("Src image", src);
+    imshow("Trg image", trg);
+
+    // RGB histograms (normal and cumulative)
+    vector<Mat> srcRgbHists    = getHists(src, 256, 0, 255),
+                trgRgbHists    = getHists(trg, 256, 0, 256),
+                srcRgbCumHists = getCumHists(srcRgbHists),
+                trgRgbCumHists = getCumHists(trgRgbHists);
+    Mat srcRgbHistContainer    = showHist(srcRgbHists),
+        trgRgbHistContainer    = showHist(trgRgbCumHists),
+        srcRgbCumHistContainer = showHist(srcRgbCumHists),
+        trgRgbCumHistContainer = showHist(trgRgbCumHists);
+
+    imshow("Src RGB Hist",     srcRgbHistContainer);
+    imshow("Src RGB Cum Hist", srcRgbCumHistContainer);
+    imshow("Trg RGB Hist",     trgRgbHistContainer);
+    imshow("Trg RGB Cum Hist", trgRgbCumHistContainer);
+
+    // LAB histograms (normal and cumulative)
+    vector<Mat> srcLabHists = getHists(srcLab, 256, -127, 128),
+                trgLabHists = getHists(trgLab, 256, -127, 128),
+                srcCumHists, trgCumHists;
+    srcLabHists.erase(srcLabHists.begin()); // We ignore the L* component for this application
+    trgLabHists.erase(trgLabHists.begin()); // We ignore the L* component for this application
+    srcCumHists = getCumHists(srcLabHists);
+    trgCumHists = getCumHists(trgLabHists);
+
+    Mat srcHistContainer    = showHist(srcLabHists),
+        srcHistCumContainer = showHist(srcCumHists),
+        trgHistContainer    = showHist(trgLabHists),
+        trgHistCumContainer = showHist(trgCumHists);
+    imshow("Src CIELAB Hist",     srcHistContainer);
+    imshow("Trg CIELAB Hist",     trgHistContainer);
+    imshow("Src CIELAB Cum Hist", srcHistCumContainer);
+    imshow("Trg CIELAB Cum Hist", trgHistCumContainer);
+
+    // Channel segmentations
+    const int   SEGMENTS   = 4,
+                THRESHOLDS = SEGMENTS - 1,
+                CHANNELS   = srcCumHists.size();
+
+    // Thresholds for each channel
+    vector<vector<float>> srcThresholds = getThresholds(srcCumHists, SEGMENTS);
+    vector<vector<float>> trgThresholds = getThresholds(trgCumHists, SEGMENTS);
+
+    // // Printing thresholds
+    // cout << "Thresholds: ";
+    // printThresholds(srcThresholds);
+
+    // Masking image according to the segments
+    vector<vector<Mat>> srcSegmentedImages = getSegments(src, srcLab, srcCumHists, srcThresholds, SEGMENTS);
+    vector<vector<Mat>> trgSegmentedImages = getSegments(trg, trgLab, trgCumHists, trgThresholds, SEGMENTS);
+
+    // Showing image segments
+    showSegments(srcSegmentedImages);
+    showSegments(trgSegmentedImages);
+
+    // Rejoining image segments into one image
+    vector<Mat> srcRejoined = constructImageFromSegments(src, srcSegmentedImages);
+    vector<Mat> trgRejoined = constructImageFromSegments(trg, trgSegmentedImages);
+
+    for(int i = 0; i < srcRejoined.size(); i++)
+        imshow("Image from channel " + to_string(i), srcRejoined[i]);
+
+    for(int i = 0; i < trgRejoined.size(); i++)
+        imshow("Image from channel " + to_string(i), trgRejoined[i]);
+
+    waitKey();
+}
+
+vector<Mat> getHists(const Mat &src, int hSize, int minR, int maxR) {
+    vector<Mat> srcChannels;
+    split(src, srcChannels);
+
+    int histSize = hSize;
+    float range[] = {minR, maxR};
+    const float *histRange[] = {range};
+
+    vector<Mat> hists(src.channels());
+    for(int i = 0; i < src.channels(); i++)
+        calcHist(&srcChannels[i], 1, 0, Mat(), hists[i], 1, &histSize, histRange, true, false);
+
+    return hists;
+}
+
+vector<Mat> getCumHists(const vector<Mat> &hists) {
+    // Calculating cumulative hist
+    vector<Mat> cumHists(hists.size());
+    for(int i = 0; i < hists.size(); i++)
+        cumHists[i] = hists[i].clone();
+
+    for(int i = 0; i < cumHists.size(); i++)
+        for(int j = 1; j < cumHists[i].rows; j++)
+            cumHists[i].at<float>(j) += cumHists[i].at<float>(j - 1);
+
+    return cumHists;
+}
+
+vector<Mat> getCumHists(const Mat &src, int hSize, int minR, int maxR) {
+    vector<Mat> cumHists = getHists(src, hSize, minR, maxR);
+
+    for(int i = 0; i < cumHists.size(); i++)
+        for(int j = 1; j < cumHists[i].rows; j++)
+            cumHists[i].at<float>(j) += cumHists[i].at<float>(j - 1);
+
+    return cumHists;
+}
+
+Mat showHist(const vector<Mat> &hists) {
+    const int CONTAINER_PADDING = 20,
+              HIST_PADDING = 10;
+    int hist_w = 512, hist_h = 400;
+    int bin_w = cvRound((double) hist_w/hists[0].rows);
+
+    Mat histContainer(hist_h + CONTAINER_PADDING * 2, hist_w + CONTAINER_PADDING * 2, CV_32FC3, Vec3f(230, 230, 230)),
+        histImage(hist_h, hist_w, CV_32FC3, Vec3f(255, 255, 255));
+
+    vector<Mat> histsCopies(hists.size());
+    for(int i = 0; i < hists.size(); i++)
+        histsCopies[i] = hists[i].clone();
+
+    for(int i = 0; i < histsCopies.size(); i++)
+        normalize(histsCopies[i], histsCopies[i], 0, histImage.rows, NORM_MINMAX, -1, Mat());
+
+    int fontFace = FONT_ITALIC,
+        thicknessText = 1;
+
+    double fontScaleText = 0.3;
+    Size textSize = getTextSize("Channel 1", fontFace, fontScaleText, thicknessText, 0);
+
+    const float STEP = 360 / histsCopies.size();
+
+    cvtColor(histImage, histImage, COLOR_BGR2HSV_FULL);
+    for(int i = 0; i < histsCopies.size(); i++) {
+        Scalar histColor(360 - ((int) ((i + 1) * STEP) % 360), 255, 255);
+
+        for(int j = 1; j < histsCopies[i].rows; j++) {
+            line(
+                histImage,
+                Point(bin_w * (j - 1), hist_h - cvRound(histsCopies[i].at<float>(j - 1))),
+                Point(bin_w * (j),     hist_h - cvRound(histsCopies[i].at<float>(j))),
+                histColor,
+                2,
+                8,
+                0
+            );
+        }
+
+        line(
+            histImage,
+            Point(HIST_PADDING * 1.2, ((HIST_PADDING * 1.2) * (i + 1)) + textSize.height/2 + 5),
+            Point(HIST_PADDING + 15,  ((HIST_PADDING * 1.2) * (i + 1)) + textSize.height/2 + 5),
+            histColor,
+            2,
+            8,
+            0
+        );
+
+        putText(
+            histImage,
+            "Channel " + to_string(i),
+            Point(HIST_PADDING + 25, (((HIST_PADDING * 1.2) + textSize.height / 2) * (i + 1)) + 5),
+            fontFace,
+            fontScaleText,
+            0,
+            thicknessText,
+            LINE_8,
+            false
+        );
+    }
+
+    rectangle(
+        histImage,
+        Point(HIST_PADDING - 5, HIST_PADDING - textSize.height + 5),
+        Point(HIST_PADDING + 25 + textSize.width + 5, HIST_PADDING + ((textSize.height * 2) * histsCopies.size()) + 5),
+        0,
+        1,
+        LINE_8
+    );
+    cvtColor(histImage, histImage, COLOR_HSV2BGR_FULL);
+
+    histImage.copyTo(histContainer(Rect(CONTAINER_PADDING, CONTAINER_PADDING, histImage.cols, histImage.rows)));
+    rectangle(
+        histContainer,
+        Point(CONTAINER_PADDING, CONTAINER_PADDING),
+        Point(CONTAINER_PADDING + histImage.cols, CONTAINER_PADDING + histImage.rows),
+        0,
+        1,
+        LINE_8
+    );
+
+    histContainer.convertTo(histContainer, CV_8UC3);
+    return histContainer;
+}
+
+
 vector<vector<float>> getThresholds(const vector<Mat> &cumHists, int SEGMENTS) {
     const int   THRESHOLDS = SEGMENTS - 1,
                 CHANNELS   = cumHists.size();
@@ -164,195 +384,4 @@ void showSegments(const vector<vector<Mat>> &segmentedImages) {
                 "Channel " + to_string(i) + ", segment " + to_string(j),
                 CIELAB_2_RGB(segmentedImages[i][j]));
     }
-}
-
-int main(void) {
-    srand(time(0));
-
-    const string IMG_PATH = "./res/",
-                 IMG_EXT = ".jpg",
-                 IMG_SRC_NAME = "test8",
-                 IMG_TRG_NAME = "test7",
-                 IMG_SRC_FILENAME = IMG_PATH + IMG_SRC_NAME + IMG_EXT,
-                 IMG_TRG_FILENAME = IMG_PATH + IMG_TRG_NAME + IMG_EXT;
-
-    Mat src = imread(IMG_SRC_FILENAME),
-        trg = imread(IMG_TRG_FILENAME),
-        output = colorTransfer(src, trg);
-
-    Mat srcLab  = RGB_2_CIELAB(src),
-        trg_lab = RGB_2_CIELAB(trg);
-
-    imshow("Src image", src);
-
-    // RGB histograms (normal and cumulative)
-    vector<Mat> rgbHists    = getHists(src, 256, 0, 255),
-                rgbCumHists = getCumHists(rgbHists);
-    Mat rgbHistContainer    = showHist(rgbHists),
-        rgbCumHistContainer = showHist(rgbCumHists);
-
-    imshow("RGB Hist", rgbHistContainer);
-    imshow("RGB Cum Hist", rgbCumHistContainer);
-
-    // LAB histograms (normal and cumulative)
-    vector<Mat> labHists = getHists(srcLab, 256, -127, 128),
-                cumHists;
-    labHists.erase(labHists.begin()); // We ignore the L* component for this application
-    cumHists = getCumHists(labHists);
-
-    Mat histContainer = showHist(labHists),
-        histCumContainer = showHist(cumHists);
-    imshow("CIELAB Hist", histContainer);
-    imshow("CIELAB Cum Hist", histCumContainer);
-
-    // Channel segmentations
-    const int   SEGMENTS   = 4,
-                THRESHOLDS = SEGMENTS - 1,
-                CHANNELS   = cumHists.size();
-
-    // Thresholds for each channel
-    vector<vector<float>> thresholds = getThresholds(cumHists, SEGMENTS);
-
-    // Printing thresholds
-    cout << "Thresholds: ";
-    printThresholds(thresholds);
-
-    // Masking image according to the segments
-    vector<vector<Mat>> segmentedImages = getSegments(src, srcLab, cumHists, thresholds, SEGMENTS);
-
-    // Showing image segments
-    showSegments(segmentedImages);
-
-    // Rejoining image segments into one image
-    vector<Mat> rejoined = constructImageFromSegments(src, segmentedImages);
-
-    for(int i = 0; i < rejoined.size(); i++)
-        imshow("Image from channel " + to_string(i), rejoined[i]);
-
-    waitKey();
-}
-
-vector<Mat> getHists(const Mat &src, int hSize, int minR, int maxR) {
-    vector<Mat> srcChannels;
-    split(src, srcChannels);
-
-    int histSize = hSize;
-    float range[] = {minR, maxR};
-    const float *histRange[] = {range};
-
-    vector<Mat> hists(src.channels());
-    for(int i = 0; i < src.channels(); i++)
-        calcHist(&srcChannels[i], 1, 0, Mat(), hists[i], 1, &histSize, histRange, true, false);
-
-    return hists;
-}
-
-vector<Mat> getCumHists(const vector<Mat> &hists) {
-    // Calculating cumulative hist
-    vector<Mat> cumHists(hists.size());
-    for(int i = 0; i < hists.size(); i++)
-        cumHists[i] = hists[i].clone();
-
-    for(int i = 0; i < cumHists.size(); i++)
-        for(int j = 1; j < cumHists[i].rows; j++)
-            cumHists[i].at<float>(j) += cumHists[i].at<float>(j - 1);
-
-    return cumHists;
-}
-
-vector<Mat> getCumHists(const Mat &src, int hSize, int minR, int maxR) {
-    vector<Mat> cumHists = getHists(src, hSize, minR, maxR);
-
-    for(int i = 0; i < cumHists.size(); i++)
-        for(int j = 1; j < cumHists[i].rows; j++)
-            cumHists[i].at<float>(j) += cumHists[i].at<float>(j - 1);
-
-    return cumHists;
-}
-
-Mat showHist(const vector<Mat> &hists) {
-    const int CONTAINER_PADDING = 20,
-              HIST_PADDING = 10;
-    int hist_w = 512, hist_h = 400;
-    int bin_w = cvRound((double) hist_w/hists[0].rows);
-
-    Mat histContainer(hist_h + CONTAINER_PADDING * 2, hist_w + CONTAINER_PADDING * 2, CV_32FC3, Vec3f(230, 230, 230)),
-        histImage(hist_h, hist_w, CV_32FC3, Vec3f(255, 255, 255));
-
-    vector<Mat> histsCopies(hists.size());
-    for(int i = 0; i < hists.size(); i++)
-        histsCopies[i] = hists[i].clone();
-
-    for(int i = 0; i < histsCopies.size(); i++)
-        normalize(histsCopies[i], histsCopies[i], 0, histImage.rows, NORM_MINMAX, -1, Mat());
-
-    int fontFace = FONT_ITALIC,
-        thicknessText = 1;
-
-    double fontScaleText = 0.3;
-    Size textSize = getTextSize("Channel 1", fontFace, fontScaleText, thicknessText, 0);
-
-    const float STEP = 360 / histsCopies.size();
-
-    cvtColor(histImage, histImage, COLOR_BGR2HSV_FULL);
-    for(int i = 0; i < histsCopies.size(); i++) {
-        Scalar histColor(360 - ((int) ((i + 1) * STEP) % 360), 255, 255);
-
-        for(int j = 1; j < histsCopies[i].rows; j++) {
-            line(
-                histImage,
-                Point(bin_w * (j - 1), hist_h - cvRound(histsCopies[i].at<float>(j - 1))),
-                Point(bin_w * (j),     hist_h - cvRound(histsCopies[i].at<float>(j))),
-                histColor,
-                2,
-                8,
-                0
-            );
-        }
-
-        line(
-            histImage,
-            Point(HIST_PADDING * 1.2, ((HIST_PADDING * 1.2) * (i + 1)) + textSize.height/2 + 5),
-            Point(HIST_PADDING + 15,  ((HIST_PADDING * 1.2) * (i + 1)) + textSize.height/2 + 5),
-            histColor,
-            2,
-            8,
-            0
-        );
-
-        putText(
-            histImage,
-            "Channel " + to_string(i),
-            Point(HIST_PADDING + 25, (((HIST_PADDING * 1.2) + textSize.height / 2) * (i + 1)) + 5),
-            fontFace,
-            fontScaleText,
-            0,
-            thicknessText,
-            LINE_8,
-            false
-        );
-    }
-
-    rectangle(
-        histImage,
-        Point(HIST_PADDING - 5, HIST_PADDING - textSize.height + 5),
-        Point(HIST_PADDING + 25 + textSize.width + 5, HIST_PADDING + ((textSize.height * 2) * histsCopies.size()) + 5),
-        0,
-        1,
-        LINE_8
-    );
-    cvtColor(histImage, histImage, COLOR_HSV2BGR_FULL);
-
-    histImage.copyTo(histContainer(Rect(CONTAINER_PADDING, CONTAINER_PADDING, histImage.cols, histImage.rows)));
-    rectangle(
-        histContainer,
-        Point(CONTAINER_PADDING, CONTAINER_PADDING),
-        Point(CONTAINER_PADDING + histImage.cols, CONTAINER_PADDING + histImage.rows),
-        0,
-        1,
-        LINE_8
-    );
-
-    histContainer.convertTo(histContainer, CV_8UC3);
-    return histContainer;
 }
