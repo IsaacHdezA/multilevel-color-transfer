@@ -19,6 +19,49 @@ vector<Mat> getCumHists(const Mat &, int, int, int);
 
 Mat showHist(const vector<Mat> &);
 
+vector<vector<float>> getThresholds(const vector<Mat> &cumHists, int SEGMENTS) {
+    const int   THRESHOLDS = SEGMENTS - 1,
+                CHANNELS   = cumHists.size();
+    const float STEP       = 1.0 / SEGMENTS;
+
+    vector<vector<float>> thresholds(CHANNELS);
+
+    // Split the image in channels and delete the L* channel. This could be deleted, it's just for information.
+    // vector<Mat> labChannels;
+    // split(srcLab, labChannels);
+    // labChannels.erase(labChannels.begin());
+
+    // Computing thresholds according to the Segments
+    // First we iterate over each channel
+    Mat normHist;
+    for(int i = 0; i < CHANNELS; i++) {
+        // float min = 0, max = 0;
+        // channelMinMax(labChannels[i], min, max);
+        // cout << "Channel " <<   i << ":\n"
+        //      << "\tMin: "  << min << '\n'
+        //      << "\tMax: "  << max << '\n';
+
+        // We make the values from the cumulative histogram from its range into a probability
+        normalize(cumHists[i], normHist, 0, 1, NORM_MINMAX);
+
+        // Find the thresholds
+        for(int j = 0; j < THRESHOLDS; j++) {
+            int thresh = 0;
+            for(int k = 0; k < normHist.rows; k++)
+                if(normHist.at<float>(k) <= (STEP * (j + 1)))
+                    thresh = k;
+            cout << "\tThreshold at " << thresh << "(" << mapNum(thresh, 0, 255, -127, 128) << "): " << normHist.at<float>(thresh) << endl;
+            thresholds[i].push_back(mapNum(thresh, 0, 255, -127, 128)); // We push the threshold into the thresholds of channel i.
+                                                                        // Since the histogram goes from [0, 255],
+                                                                        // we map the threshold from that range to [-127, +128]
+                                                                        // because a* and b* values are between that range
+        }
+        cout << endl;
+    }
+
+    return thresholds;
+}
+
 int main(void) {
     srand(time(0));
 
@@ -38,62 +81,41 @@ int main(void) {
 
     imshow("Src image", src);
 
-    // RGB histograms
-    vector<Mat> rgbHists = getHists(src, 256, 0, 255);
-    Mat rgbHistContainer = showHist(rgbHists);
-    imshow("RGB Hist", rgbHistContainer);
+    // RGB histograms (normal and cumulative)
+    vector<Mat> rgbHists    = getHists(src, 256, 0, 255),
+                rgbCumHists = getCumHists(rgbHists);
+    Mat rgbHistContainer    = showHist(rgbHists),
+        rgbCumHistContainer = showHist(rgbCumHists);
 
-    // RGB Cumulative histogram
-    vector<Mat> rgbCumHists = getCumHists(rgbHists);
-    Mat rgbCumHistContainer = showHist(rgbCumHists);
+    imshow("RGB Hist", rgbHistContainer);
     imshow("RGB Cum Hist", rgbCumHistContainer);
 
-    // LAB histograms
-    vector<Mat> labHists = getHists(srcLab, 256, -127, 128);
-    labHists.erase(labHists.begin());
+    // LAB histograms (normal and cumulative)
+    vector<Mat> labHists = getHists(srcLab, 256, -127, 128),
+                cumHists;
+    labHists.erase(labHists.begin()); // We ignore the L* component for this application
+    cumHists = getCumHists(labHists);
 
-    Mat histContainer = showHist(labHists);
+    Mat histContainer = showHist(labHists),
+        histCumContainer = showHist(cumHists);
     imshow("CIELAB Hist", histContainer);
-
-    // LAB Cumulative histogram
-    vector<Mat> cumHists = getCumHists(labHists);
-    Mat histCumContainer = showHist(cumHists);
     imshow("CIELAB Cum Hist", histCumContainer);
 
-    const int SEGMENTS = 4,
-              THRESHOLDS = SEGMENTS - 1;
-    const float STEP = 1.0 / SEGMENTS;
-    vector<vector<float>> thresholds(cumHists.size());
+    // Channel segmentations
+    const int   SEGMENTS   = 4,
+                THRESHOLDS = SEGMENTS - 1,
+                CHANNELS   = cumHists.size();
+    const float STEP       = 1.0 / SEGMENTS; // Gap between each threshold
 
-    cout << "Image size: " << src.size() << '\n'
-         << "Segments: " << SEGMENTS << '\n'
-         << "Thresholds: " << THRESHOLDS << '\n'
-         << "Step: " << STEP << '\n'
-         << "CumHists size: " << cumHists.size() << endl << endl;
+    // Just some information
+    cout << "Image size: "    << src.size()      << '\n'
+         << "Segments: "      << SEGMENTS        << '\n'
+         << "Thresholds: "    << THRESHOLDS      << '\n'
+         << "Step: "          << STEP            << '\n'
+         << "CumHists size: " << CHANNELS << endl << endl;
 
-    vector<Mat> labChannels;
-    split(srcLab, labChannels);
-    labChannels.erase(labChannels.begin());
-
-    // Computing thresholds according to the Segments
-    for(int i = 0; i < cumHists.size(); i++) {
-        float min = 0, max = 0;
-        channelMinMax(labChannels[i], min, max);
-
-        normalize(cumHists[i], cumHists[i], 0, 1, NORM_MINMAX);
-        cout << "Channel " <<   i << ":\n"
-             << "\tMin: "  << min << '\n'
-             << "\tMax: "  << max << '\n';
-        for(int j = 0; j < THRESHOLDS; j++) {
-            int thresh = 0;
-            for(int k = 0; k < cumHists[i].rows; k++)
-                if(cumHists[i].at<float>(k) <= (STEP * (j + 1)))
-                    thresh = k;
-            cout << "\tThreshold at " << thresh << "(" << mapNum(thresh, 0, 255, -127, 128) << "): " << cumHists[i].at<float>(thresh) << endl;
-            thresholds[i].push_back(mapNum(thresh, 0, 255, -127, 128));
-        }
-        cout << endl;
-    }
+    // Thresholds for each channel
+    vector<vector<float>> thresholds = getThresholds(cumHists, SEGMENTS);
 
     // Printing thresholds
     cout << "Thresholds: [";
@@ -106,15 +128,15 @@ int main(void) {
     }
     cout << "]" << endl;
 
+    // Masking image according to the segments
     vector<vector<Mat>> segmentedImages;
     vector<Mat> segments;
 
-    // Masking image according to the segments
-    for(int i = 0; i < cumHists.size(); i++) {
+    for(int i = 0; i < CHANNELS; i++) {
         segments.clear();
 
         cout << "From channel " << i << "\n\tThe segment 0 goes from -127 to " << thresholds[i][0] << endl;
-        // Creating image for segment 0
+        // Creating image for segment 0 (values between [rangeMin, 0], in this case, rangeMin is -127)
         Mat temp = Mat::zeros(srcLab.rows, srcLab.cols, CV_32FC3);
         for(int j = 0; j < temp.rows; j++) {
             Vec3f *row = (Vec3f *) srcLab.ptr<Vec3f>(j),
@@ -126,7 +148,7 @@ int main(void) {
         }
         segments.push_back(temp.clone());
 
-        // Creating image for segments 1-(SEGMENTS - 1)
+        // Creating image for segments [1, SEGMENTS - 1) (values between the previous threshold and the current one)
         for(int j = 1; j < THRESHOLDS; j++) {
             temp = Mat::zeros(src.rows, src.cols, CV_32FC3);
             cout << "\tThe segment " << j << " goes from " << thresholds[i][j - 1] << " to " << thresholds[i][j] << endl;
@@ -143,7 +165,7 @@ int main(void) {
             segments.push_back(temp.clone());
         }
 
-        // Creating image for the last segment
+        // Creating image for the last segment (values between [lastThreshold, rangeMax], in this case, rangeMax is 128)
         temp = Mat::zeros(src.rows, src.cols, CV_32FC3);
         cout << "\tThe segment " << THRESHOLDS << " goes from " << thresholds[i][THRESHOLDS - 1] << " to " << 128 << endl;
         for(int j = 0; j < temp.rows; j++) {
