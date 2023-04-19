@@ -24,7 +24,7 @@ int main(void) {
 
     const string IMG_PATH = "./res/",
                  IMG_EXT = ".jpg",
-                 IMG_SRC_NAME = "test2",
+                 IMG_SRC_NAME = "test6",
                  IMG_TRG_NAME = "test7",
                  IMG_SRC_FILENAME = IMG_PATH + IMG_SRC_NAME + IMG_EXT,
                  IMG_TRG_FILENAME = IMG_PATH + IMG_TRG_NAME + IMG_EXT;
@@ -38,18 +38,26 @@ int main(void) {
 
     imshow("Src image", src);
 
+    // RGB histograms
     vector<Mat> rgbHists = getHists(src, 256, 0, 255);
+    rgbHists.erase(rgbHists.begin());
+
     Mat rgbHistContainer = showHist(rgbHists);
     imshow("RGB Hist", rgbHistContainer);
 
+    // RGB Cumulative histogram
     vector<Mat> rgbCumHists = getCumHists(rgbHists);
     Mat rgbCumHistContainer = showHist(rgbCumHists);
     imshow("RGB Cum Hist", rgbCumHistContainer);
 
+    // LAB histograms
     vector<Mat> labHists = getHists(srcLab, 256, -127, 128);
+    labHists.erase(labHists.begin());
+
     Mat histContainer = showHist(labHists);
     imshow("CIELAB Hist", histContainer);
 
+    // LAB Cumulative histogram
     vector<Mat> cumHists = getCumHists(labHists);
     Mat histCumContainer = showHist(cumHists);
     imshow("CIELAB Cum Hist", histCumContainer);
@@ -57,11 +65,14 @@ int main(void) {
     const int SEGMENTS = 4,
               THRESHOLDS = SEGMENTS - 1;
     const float STEP = 1.0 / SEGMENTS;
-    vector<vector<float>> thresholds(THRESHOLDS);
+    vector<vector<float>> thresholds(cumHists.size());
 
-    cout << "Thresholds: " << SEGMENTS << '\n'
-         << "Step: " << STEP << endl;
+    cout << "Segments: " << SEGMENTS << '\n'
+         << "Thresholds: " << THRESHOLDS << '\n'
+         << "Step: " << STEP << '\n'
+         << "CumHists size: " << cumHists.size() << endl;
 
+    // Computing thresholds according to the Segments
     for(int i = 0; i < cumHists.size(); i++) {
         normalize(cumHists[i], cumHists[i], 0, 1, NORM_MINMAX);
         for(int j = 0; j < THRESHOLDS; j++) {
@@ -76,12 +87,22 @@ int main(void) {
         }
     }
 
+    // Printing thresholds
+    cout << "Thresholds: [";
+    for(int i = 0; i < thresholds.size(); i++) {
+        cout << "[";
+        for(int j = 0; j < thresholds[i].size(); j++) {
+            cout << (float) thresholds[i][j] << ((j + 1 == thresholds[i].size()) ? "" : ", ");
+        }
+        cout << "]" << ((i + 1) == thresholds.size() ? "" : ", ");
+    }
+    cout << "]" << endl;
+
     vector<vector<Mat>> segmentedImages;
     vector<Mat> segments;
 
     // Masking image according to the segments
-    for(int i = 0; i < srcLab.channels(); i++) {
-        cout << "Channel " << i << endl;
+    for(int i = 0; i < cumHists.size(); i++) {
         segments.clear();
 
         // Creating image for segment 0
@@ -158,16 +179,6 @@ int main(void) {
 
     for(int i = 0; i < rejoined.size(); i++)
         imshow("Image from channel " + to_string(i), rejoined[i]);
-
-    cout << "[";
-    for(int i = 0; i < thresholds.size(); i++) {
-        cout << "[";
-        for(int j = 0; j < thresholds[i].size(); j++) {
-            cout << (float) thresholds[i][j] << ((j + 1 == thresholds[i].size()) ? "" : ", ");
-        }
-        cout << "]" << ((i + 1) == thresholds.size() ? "" : ", ");
-    }
-    cout << "]" << endl;
 
     waitKey();
 }
