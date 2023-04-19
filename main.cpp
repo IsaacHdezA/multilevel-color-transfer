@@ -24,7 +24,7 @@ int main(void) {
 
     const string IMG_PATH = "./res/",
                  IMG_EXT = ".jpg",
-                 IMG_SRC_NAME = "test3",
+                 IMG_SRC_NAME = "test2",
                  IMG_TRG_NAME = "test7",
                  IMG_SRC_FILENAME = IMG_PATH + IMG_SRC_NAME + IMG_EXT,
                  IMG_TRG_FILENAME = IMG_PATH + IMG_TRG_NAME + IMG_EXT;
@@ -33,7 +33,7 @@ int main(void) {
         trg = imread(IMG_TRG_FILENAME),
         output = colorTransfer(src, trg);
 
-    Mat srcLab = RGB_2_CIELAB(src),
+    Mat srcLab  = RGB_2_CIELAB(src),
         trg_lab = RGB_2_CIELAB(trg);
 
     imshow("Src image", src);
@@ -57,7 +57,7 @@ int main(void) {
     const int SEGMENTS = 4,
               THRESHOLDS = SEGMENTS - 1;
     const float STEP = 1.0 / SEGMENTS;
-    vector<vector<float>> thresholds(SEGMENTS - 1);
+    vector<vector<float>> thresholds(THRESHOLDS);
 
     cout << "Thresholds: " << SEGMENTS << '\n'
          << "Step: " << STEP << endl;
@@ -70,7 +70,8 @@ int main(void) {
                 if(cumHists[i].at<float>(k) <= (STEP * (j + 1)))
                     thresh = k;
                 cout << cumHists[i].at<float>(thresh) << endl;
-            thresholds[i].push_back(mapNum(thresh, 0, cumHists[i].rows, -127, 128));
+            thresholds[i].push_back(mapNum(thresh, 0, 255, -127, 128));
+            // thresholds[i].push_back(thresh);
             // thresholds[i].push_back(cumHists[i].at<float>(thresh));
         }
     }
@@ -78,12 +79,7 @@ int main(void) {
     vector<vector<Mat>> segmentedImages;
     vector<Mat> segments;
 
-    // i is for the channels
-    // j is for the thresholds
-    // k is for the output image row
-    // l is for the output image row column
-    // m is for the 
-
+    // Masking image according to the segments
     for(int i = 0; i < srcLab.channels(); i++) {
         cout << "Channel " << i << endl;
         segments.clear();
@@ -106,17 +102,17 @@ int main(void) {
             for(int k = 0; k < temp.rows; k++) {
                 Vec3f *row = (Vec3f *) srcLab.ptr<Vec3f>(k),
                       *out = (Vec3f *)   temp.ptr<Vec3f>(k);
-                
+
                 for(int l = 0; l < temp.cols; l++) {
                     if(row[l][i] >= thresholds[i][j - 1] && row[l][i] < thresholds[i][j])
                         out[l] = row[l];
                 }
-                
+
             }
             segments.push_back(temp.clone());
         }
 
-        // // Creating image for the last segment
+        // Creating image for the last segment
         temp = Mat::zeros(src.rows, src.cols, CV_32FC3);
         for(int j = 0; j < temp.rows; j++) {
             Vec3f *row = (Vec3f *) srcLab.ptr<Vec3f>(j),
@@ -130,6 +126,7 @@ int main(void) {
         segmentedImages.push_back(segments);
     }
 
+    // Showing image segments
     for(int i = 0; i < segmentedImages.size(); i++) {
         for(int j = 0; j < segmentedImages[i].size(); j++)
             imshow(
@@ -137,6 +134,30 @@ int main(void) {
                 CIELAB_2_RGB(segmentedImages[i][j]));
         waitKey();
     }
+
+    // Rejoining image segments into one image
+    vector<Mat> rejoined;
+    for(int i = 0; i < segmentedImages.size(); i++) {
+        cout << "Creating new image" << endl;
+        Mat temp = Mat::zeros(src.rows, src.cols, CV_32FC3);
+        for(int j = 0; j < segmentedImages[i].size(); j++) {
+
+            for(int k = 0; k < segmentedImages[i][j].rows; k++) {
+                Vec3f *row = (Vec3f *) segmentedImages[i][j].ptr<Vec3f>(k),
+                      *out = (Vec3f *)                  temp.ptr<Vec3f>(k);
+                for(int l = 0; l < segmentedImages[i][j].cols; l++)
+                    if(row[l] != Vec3f(0.0, 0.0, 0.0))
+                        out[l] = row[l];
+
+            }
+            imshow("Something", CIELAB_2_RGB(temp));
+            waitKey();
+        }
+        rejoined.push_back(CIELAB_2_RGB(temp));
+    }
+
+    for(int i = 0; i < rejoined.size(); i++)
+        imshow("Image from channel " + to_string(i), rejoined[i]);
 
     cout << "[";
     for(int i = 0; i < thresholds.size(); i++) {
@@ -195,8 +216,8 @@ Mat showHist(const vector<Mat> &hists) {
     int hist_w = 512, hist_h = 400;
     int bin_w = cvRound((double) hist_w/hists[0].rows);
 
-    Mat histContainer(hist_h + CONTAINER_PADDING * 2, hist_w + CONTAINER_PADDING * 2, CV_8UC3, Scalar(230, 230, 230)),
-        histImage(hist_h, hist_w, CV_8UC3, Scalar(255, 255, 255));
+    Mat histContainer(hist_h + CONTAINER_PADDING * 2, hist_w + CONTAINER_PADDING * 2, CV_32FC3, Vec3f(230, 230, 230)),
+        histImage(hist_h, hist_w, CV_32FC3, Vec3f(255, 255, 255));
 
     vector<Mat> histsCopies(hists.size());
     for(int i = 0; i < hists.size(); i++)
@@ -211,12 +232,23 @@ Mat showHist(const vector<Mat> &hists) {
     double fontScaleText = 0.3;
     Size textSize = getTextSize("Channel 1", fontFace, fontScaleText, thicknessText, 0);
 
-    for(int i = 0; i < histsCopies.size(); i++) {
-        int b = randInt(0, 255),
-            g = randInt(0, 255),
-            r = randInt(0, 255);
+    const float STEP = 360 / histsCopies.size();
 
-        Scalar histColor(b, g, r);
+    cvtColor(histImage, histImage, COLOR_BGR2HSV_FULL);
+    for(int i = 0; i < histsCopies.size(); i++) {
+        Scalar histColor(360 - ((int) ((i + 1) * STEP) % 360), 255, 255);
+
+        for(int j = 1; j < histsCopies[i].rows; j++) {
+            line(
+                histImage,
+                Point(bin_w * (j - 1), hist_h - cvRound(histsCopies[i].at<float>(j - 1))),
+                Point(bin_w * (j),     hist_h - cvRound(histsCopies[i].at<float>(j))),
+                histColor,
+                2,
+                8,
+                0
+            );
+        }
 
         line(
             histImage,
@@ -239,18 +271,6 @@ Mat showHist(const vector<Mat> &hists) {
             LINE_8,
             false
         );
-
-        for(int j = 1; j < histsCopies[i].rows; j++) {
-            line(
-                histImage,
-                Point(bin_w * (j - 1), hist_h - cvRound(histsCopies[i].at<float>(j - 1))),
-                Point(bin_w * (j),     hist_h - cvRound(histsCopies[i].at<float>(j))),
-                histColor,
-                2,
-                8,
-                0
-            );
-        }
     }
 
     rectangle(
@@ -261,6 +281,7 @@ Mat showHist(const vector<Mat> &hists) {
         1,
         LINE_8
     );
+    cvtColor(histImage, histImage, COLOR_HSV2BGR_FULL);
 
     histImage.copyTo(histContainer(Rect(CONTAINER_PADDING, CONTAINER_PADDING, histImage.cols, histImage.rows)));
     rectangle(
@@ -272,5 +293,6 @@ Mat showHist(const vector<Mat> &hists) {
         LINE_8
     );
 
+    histContainer.convertTo(histContainer, CV_8UC3);
     return histContainer;
 }
