@@ -32,8 +32,8 @@ int main(void) {
 
     const string IMG_PATH = "./res/",
                  IMG_EXT = ".jpg",
-                 IMG_SRC_NAME = "test8",
-                 IMG_TRG_NAME = "test7",
+                 IMG_SRC_NAME = "test10",
+                 IMG_TRG_NAME = "test8",
                  IMG_SRC_FILENAME = IMG_PATH + IMG_SRC_NAME + IMG_EXT,
                  IMG_TRG_FILENAME = IMG_PATH + IMG_TRG_NAME + IMG_EXT;
 
@@ -51,17 +51,7 @@ int main(void) {
                 trgRgbHists    = getHists(trg, 256, 0, 256),
                 srcRgbCumHists = getCumHists(srcRgbHists),
                 trgRgbCumHists = getCumHists(trgRgbHists);
-    Mat srcRgbHistContainer    = showHist(srcRgbHists),
-        trgRgbHistContainer    = showHist(trgRgbCumHists),
-        srcRgbCumHistContainer = showHist(srcRgbCumHists),
-        trgRgbCumHistContainer = showHist(trgRgbCumHists);
 
-    imshow("Src RGB Hist",     srcRgbHistContainer);
-    imshow("Src RGB Cum Hist", srcRgbCumHistContainer);
-    imshow("Trg RGB Hist",     trgRgbHistContainer);
-    imshow("Trg RGB Cum Hist", trgRgbCumHistContainer);
-
-    // LAB histograms (normal and cumulative)
     vector<Mat> srcLabHists = getHists(srcLab, 256, -127, 128),
                 trgLabHists = getHists(trgLab, 256, -127, 128),
                 srcCumHists, trgCumHists;
@@ -69,15 +59,6 @@ int main(void) {
     trgLabHists.erase(trgLabHists.begin()); // We ignore the L* component for this application
     srcCumHists = getCumHists(srcLabHists);
     trgCumHists = getCumHists(trgLabHists);
-
-    Mat srcHistContainer    = showHist(srcLabHists),
-        srcHistCumContainer = showHist(srcCumHists),
-        trgHistContainer    = showHist(trgLabHists),
-        trgHistCumContainer = showHist(trgCumHists);
-    imshow("Src CIELAB Hist",     srcHistContainer);
-    imshow("Trg CIELAB Hist",     trgHistContainer);
-    imshow("Src CIELAB Cum Hist", srcHistCumContainer);
-    imshow("Trg CIELAB Cum Hist", trgHistCumContainer);
 
     // Channel segmentations
     const int   SEGMENTS   = 4,
@@ -88,29 +69,66 @@ int main(void) {
     vector<vector<float>> srcThresholds = getThresholds(srcCumHists, SEGMENTS);
     vector<vector<float>> trgThresholds = getThresholds(trgCumHists, SEGMENTS);
 
-    // // Printing thresholds
-    // cout << "Thresholds: ";
-    // printThresholds(srcThresholds);
-
     // Masking image according to the segments
     vector<vector<Mat>> srcSegmentedImages = getSegments(src, srcLab, srcCumHists, srcThresholds, SEGMENTS);
     vector<vector<Mat>> trgSegmentedImages = getSegments(trg, trgLab, trgCumHists, trgThresholds, SEGMENTS);
+    vector<vector<Mat>> output(srcSegmentedImages.size());
+
+    // Transfer colors between segments
+    for(int i = 0; i < srcSegmentedImages.size(); i++) {
+        for(int j = 0; j < srcSegmentedImages[i].size(); j++) {
+            Mat temp = colorTransfer(
+                    CIELAB_2_RGB(srcSegmentedImages[i][j]),
+                    CIELAB_2_RGB(trgSegmentedImages[i][j])
+                );
+            output[i].push_back(temp.clone());
+        }
+    }
+
+    // Showing segments
+    // for(int i = 0; i < output.size(); i++)
+    //     for(int j = 0; j < output[i].size(); j++)
+    //         imshow("Channel " + to_string(i) + ", segment " + to_string(j), output[i][j]);
+
+    // Merging all segments again
+    vector<Mat> reMerged(output.size());
+    for(int i = 0; i < output.size(); i++) {
+        Mat temp = Mat::zeros(output[i][0].rows, output[i][0].cols, CV_8UC3);
+        for(int j = 0; j < output[i].size(); j++)
+            for(int r = 0; r < output[i][j].rows; r++) {
+                Vec3b *row = (Vec3b *) output[i][j].ptr<Vec3b>(r),
+                      *out = (Vec3b *)         temp.ptr<Vec3b>(r);
+                for(int c = 0; c < output[i][j].cols; c++)
+                    if(row[c] != Vec3b(1, 1, 1))
+                        out[c] = row[c];
+            }
+        reMerged[i] = temp.clone();
+    }
+
+    for(int i = 0; i < reMerged.size(); i++)
+        imshow("Output from channel " + to_string(i), reMerged[i]);
 
     // Showing image segments
-    showSegments(srcSegmentedImages);
-    showSegments(trgSegmentedImages);
+    // showSegments(srcSegmentedImages);
+    // showSegments(trgSegmentedImages);
+    // showSegments(output);
 
     // Rejoining image segments into one image
-    vector<Mat> srcRejoined = constructImageFromSegments(src, srcSegmentedImages);
-    vector<Mat> trgRejoined = constructImageFromSegments(trg, trgSegmentedImages);
+    // vector<Mat> srcRejoined = constructImageFromSegments(src, srcSegmentedImages);
+    // vector<Mat> trgRejoined = constructImageFromSegments(trg, trgSegmentedImages);
+    // vector<Mat> outRejoined = constructImageFromSegments(src, output);
 
-    for(int i = 0; i < srcRejoined.size(); i++)
-        imshow("Image from channel " + to_string(i), srcRejoined[i]);
+    // for(int i = 0; i < srcRejoined.size(); i++)
+    //     imshow("Source image from channel " + to_string(i), srcRejoined[i]);
 
-    for(int i = 0; i < trgRejoined.size(); i++)
-        imshow("Image from channel " + to_string(i), trgRejoined[i]);
+    // for(int i = 0; i < trgRejoined.size(); i++)
+    //     imshow("Target image from channel " + to_string(i), trgRejoined[i]);
+
+    // for(int i = 0; i < outRejoined.size(); i++)
+    //     imshow("Output image from channel " + to_string(i) + ".jpg", outRejoined[i]);
 
     waitKey();
+    return 0;
 }
 
 vector<Mat> getHists(const Mat &src, int hSize, int minR, int maxR) {
@@ -238,7 +256,6 @@ Mat showHist(const vector<Mat> &hists) {
     return histContainer;
 }
 
-
 vector<vector<float>> getThresholds(const vector<Mat> &cumHists, int SEGMENTS) {
     const int   THRESHOLDS = SEGMENTS - 1,
                 CHANNELS   = cumHists.size();
@@ -246,8 +263,6 @@ vector<vector<float>> getThresholds(const vector<Mat> &cumHists, int SEGMENTS) {
 
     vector<vector<float>> thresholds(CHANNELS);
 
-    // Split the image in channels and delete the L* channel. This could be deleted, it's just for information.
-    // vector<Mat> labChannels;
     // split(srcLab, labChannels);
     // labChannels.erase(labChannels.begin());
 
@@ -345,18 +360,23 @@ vector<Mat> constructImageFromSegments(const Mat &src, const vector<vector<Mat>>
     vector<Mat> rejoined;
     for(int i = 0; i < segmentedImages.size(); i++) {
         Mat temp = Mat::zeros(src.rows, src.cols, CV_32FC3);
+        cout << "From channel " << i << ": " << endl;
         for(int j = 0; j < segmentedImages[i].size(); j++) {
-
+            cout << "\t- Segment " << j << ": " << endl;
             for(int k = 0; k < segmentedImages[i][j].rows; k++) {
                 Vec3f *row = (Vec3f *) segmentedImages[i][j].ptr<Vec3f>(k),
                       *out = (Vec3f *)                  temp.ptr<Vec3f>(k);
-                for(int l = 0; l < segmentedImages[i][j].cols; l++)
-                    if(row[l] != Vec3f(0.0, 0.0, 0.0))
+                cout << "\t\t- First pixel of row " << k << ": " << row[0] << endl;
+                for(int l = 0; l < segmentedImages[i][j].cols; l++) {
+                    if(row[l] != Vec3f(0.0, 0.0, 0.0)) {
                         out[l] = row[l];
-
+                    }
+                }
+                // imshow("Reconstructing image from channel and its segments", CIELAB_2_RGB(temp));
+                // waitKey(1);
             }
-            imshow("Reconstructing image from channel and its segments", CIELAB_2_RGB(temp));
-            waitKey();
+            // imshow("Reconstructing image from channel and its segments", CIELAB_2_RGB(temp));
+            // waitKey();
         }
         rejoined.push_back(CIELAB_2_RGB(temp));
     }
